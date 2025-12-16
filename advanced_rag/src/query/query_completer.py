@@ -135,3 +135,4 @@ Now complete this query: "{query}"
         logger.error(f"[QUERY_COMPLETION] Error completing query: {e}")
         return [query]  # Fallback to original query
 
+

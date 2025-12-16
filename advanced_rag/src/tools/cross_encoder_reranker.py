@@ -166,3 +166,4 @@ def rerank_with_scores(
         result = [(doc, 0.5) for doc in documents]
         return result[:top_k] if top_k else result
 
+

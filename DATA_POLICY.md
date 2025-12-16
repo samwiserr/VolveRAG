@@ -47,3 +47,4 @@
 4. **Place dataset** at expected path (e.g., `../spwla_volve-main/`)
 5. **Build index**: `python -m src.main --build-index --documents-path ../spwla_volve-main`
 6. **Run application**: `streamlit run web_app.py`
+

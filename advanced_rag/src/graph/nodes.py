@@ -389,9 +389,13 @@ def generate_query_or_respond(state: MessagesState, tools):
             return {"messages": [forced]}
 
         # Deterministic routing: Petrophysical parameters table (Net/Gross, PHIF, SW, KLOGH) by well/formation/parameter
+        # Prefer structured petrophysical lookup when a local cache exists (no hardcoded well-number requirement)
+        vectorstore_dir = Path(__file__).resolve().parents[2] / "data" / "vectorstore"
+        has_petro_cache = (vectorstore_dir / "petro_params_cache.json").exists()
+
         is_param_query = (
             (any(k in ql for k in ["petrophysical parameters", "petrophysical parameter", "net to gross", "net-to-gross", "netgros", "net/gross", "ntg", "n/g", "phif", "phi", "poro", "porosity", "water saturation", " sw", "klogh", "permeability", "permeab", "perm"]) or re.search(r'\bk\b', ql, re.IGNORECASE))
-            and "15" in ql and "9" in ql
+            and (has_petro_cache or ("15" in ql and "9" in ql))
         )
         if is_param_query:
             forced = AIMessage(

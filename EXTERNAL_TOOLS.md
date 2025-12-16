@@ -108,3 +108,4 @@ If you encounter issues with external tools:
 3. Check PATH environment variable
 4. Open an issue on GitHub with error details
 
+

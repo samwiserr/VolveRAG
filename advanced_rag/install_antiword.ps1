@@ -86,3 +86,4 @@ Remove-Item $zipPath -ErrorAction SilentlyContinue
 
 Write-Host "`nInstallation script completed!" -ForegroundColor Green
 
+

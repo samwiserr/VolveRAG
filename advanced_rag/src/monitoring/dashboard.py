@@ -185,3 +185,4 @@ if metrics:
     if not recent_df.empty:
         st.dataframe(recent_df[['timestamp', 'metric', 'value']], use_container_width=True)
 
+
