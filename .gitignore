@@ -33,15 +33,28 @@ ENV/
 
 # Data and vector database (exclude large files)
 vector_db/
-data/vectorstore/
 data/indices/
 data/processed/
+
+# BUT allow vectorstore and cache files for deployment (pre-built index)
+!advanced_rag/data/vectorstore/
+!advanced_rag/data/vectorstore/**
+!advanced_rag/data/well_picks_cache.json
+
+# Exclude other data files
 *.pkl
 *.pickle
 *.index
 *.bin
 *.sqlite3
 *.db
+
+# BUT allow ChromaDB files in vectorstore (needed for deployment)
+!advanced_rag/data/vectorstore/*.sqlite3
+!advanced_rag/data/vectorstore/*.bin
+!advanced_rag/data/vectorstore/*.pickle
+!advanced_rag/data/vectorstore/**/*.bin
+!advanced_rag/data/vectorstore/**/*.pickle
 
 # Volve dataset (DO NOT COMMIT - large files, licensing issues)
 # Users should download separately and place outside repository
