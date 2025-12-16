@@ -38,12 +38,7 @@ vector_db/
 data/indices/
 data/processed/
 
-# BUT allow vectorstore for deployment (pre-built index)
-!advanced_rag/data/vectorstore/
-!advanced_rag/data/vectorstore/**
-!advanced_rag/data/well_picks_cache.json
-
-# Exclude other data files
+# Exclude other data files (general patterns first)
 *.pkl
 *.pickle
 *.index
@@ -51,12 +46,17 @@ data/processed/
 *.sqlite3
 *.db
 
-# BUT allow ChromaDB files in vectorstore (needed for deployment)
+# THEN allow specific vectorstore files (negation rules after)
+!advanced_rag/data/vectorstore/
+!advanced_rag/data/vectorstore/**
 !advanced_rag/data/vectorstore/*.sqlite3
 !advanced_rag/data/vectorstore/*.bin
 !advanced_rag/data/vectorstore/*.pickle
 !advanced_rag/data/vectorstore/**/*.bin
 !advanced_rag/data/vectorstore/**/*.pickle
+!advanced_rag/data/vectorstore/*.json
+!advanced_rag/data/vectorstore/*.jsonl
+!advanced_rag/data/well_picks_cache.json
 
 # Volve dataset (DO NOT COMMIT - large files, licensing issues)
 # Users should download separately and place outside repository
