@@ -118,12 +118,25 @@ class WellPicksTool:
         self._by_well: Dict[str, List[WellPickRow]] = {}
         self._well_labels: List[Tuple[str, str]] = []  # (original_label, normalized_key) for fuzzy matching
 
-        if not self.dat_path.exists():
-            raise FileNotFoundError(f"Well picks .dat not found: {self.dat_path}")
-
+        # Don't require the .dat file to exist in cloud deployments.
+        # If the .dat is missing but a cache exists, load from cache.
         self._load_or_parse()
 
     def _load_or_parse(self) -> None:
+        # If the .dat file is missing, try loading from cache directly.
+        if not self.dat_path.exists():
+            if self.cache_path.exists():
+                try:
+                    payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
+                    if isinstance(payload.get("rows"), list):
+                        self._rows = [WellPickRow(**r) for r in payload["rows"]]
+                        self._rebuild_index()
+                        logger.info(f"[OK] Loaded well picks cache with {len(self._rows)} rows (dat missing)")
+                        return
+                except Exception as e:
+                    logger.warning(f"[WELL_PICKS] Cache load failed while dat missing: {e}")
+            raise FileNotFoundError(f"Well picks .dat not found and no cache available: {self.dat_path}")
+
         md5 = _file_md5(self.dat_path)
         if self.cache_path.exists():
             try:
