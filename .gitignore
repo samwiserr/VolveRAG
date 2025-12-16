@@ -43,6 +43,28 @@ data/processed/
 *.sqlite3
 *.db
 
+# Volve dataset (DO NOT COMMIT - large files, licensing issues)
+# Users should download separately and place outside repository
+spwla_volve-main/
+*.las
+*.LAS
+*.pdf
+*.PDF
+*.doc
+*.DOC
+*.docx
+*.DOCX
+*.dat
+*.DAT
+*.xlsx
+*.XLSX
+*.dlis
+*.DLIS
+*.lis
+*.LIS
+*.asc
+*.ASC
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb

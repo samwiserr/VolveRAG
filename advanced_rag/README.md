@@ -29,11 +29,41 @@ A state-of-the-art Retrieval-Augmented Generation (RAG) system for querying Volv
 - **Performance Monitoring**: Built-in metrics and evaluation framework
 - **Incomplete Query Handling**: Automatically completes partial queries
 
+## ⚡ Quick Start (Golden Path)
+
+**The supported way to run VolveRAG:**
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/samwiserr/VolveRAG.git
+cd VolveRAG/advanced_rag
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Set up environment
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
+
+# 4. Download Volve dataset separately (outside repository)
+# Place it at: ../spwla_volve-main/ (or configure your path)
+# See DATA_POLICY.md for details
+
+# 5. Build index
+python -m src.main --build-index --documents-path ../spwla_volve-main
+
+# 6. Run web UI
+streamlit run web_app.py
+```
+
+**Note**: The `src/` directory in the repository root is legacy. Use `advanced_rag/` for the current system.
+
 ## 📋 Prerequisites
 
 - Python 3.8+
 - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
-- Volve dataset (petrophysical reports)
+- Volve dataset (petrophysical reports) - **download separately, do not commit to repo**
+- (Optional) antiword for `.doc` file support - see [EXTERNAL_TOOLS.md](../EXTERNAL_TOOLS.md)
 
 ## 🛠️ Installation
 
@@ -62,12 +92,16 @@ Or export them:
 export OPENAI_API_KEY="sk-your-api-key-here"
 ```
 
-4. **Prepare your documents:**
+4. **Download and prepare the Volve dataset:**
 
-Place the Volve petrophysical reports in a directory (e.g., `../spwla_volve-main/`). The system will automatically discover and process:
+**Important**: The Volve dataset should NOT be in the repository. Download it separately from the official Equinor source and place it outside the repository (e.g., `../spwla_volve-main/`).
+
+The system will automatically discover and process:
 - PDF files (petrophysical reports)
 - DOC/DOCX files (LFP reports)
 - DAT files (Well_picks_Volve_v1.dat)
+
+See [DATA_POLICY.md](../DATA_POLICY.md) for details on why data files are excluded from the repository.
 
 ## 🚀 Quick Start
 
@@ -145,6 +179,34 @@ python -m src.main --chat
 - "list all well formations and their properties"
 - "every formations and their properties"
 
+## 🔍 Retrieval Strategy
+
+VolveRAG uses a **dual retrieval approach** for optimal accuracy:
+
+### 1. **Deterministic Fact Retrieval** (Structured Tools)
+For precise numeric queries, the system uses direct lookups from parsed tables:
+- **Well Picks Tool**: Formation depths (MD, TVD, TVDSS)
+- **Petrophysical Parameters Tool**: Net/Gross, PHIF, SW, KLOGH (Klinkenberg-corrected horizontal permeability)
+- **Evaluation Parameters Tool**: Archie parameters, matrix/fluid density, GR min/max
+- **Structured Facts Tool**: General numeric facts from notes and narrative text
+
+**When used**: Queries asking for specific values (e.g., "What is the porosity for Hugin in 15/9-F-5?")
+
+**Benefits**: 100% accurate, no LLM interpretation needed, deterministic results
+
+### 2. **Narrative RAG** (Hybrid Retrieval)
+For exploratory or contextual queries:
+- Semantic search (vector embeddings via ChromaDB)
+- Keyword search (BM25)
+- Cross-encoder reranking
+- LLM-based answer synthesis with document context
+
+**When used**: Queries asking for explanations, summaries, or complex analysis (e.g., "What happened to wellbore 15/9-F-15 C?")
+
+**Benefits**: Handles natural language, provides context, explains relationships
+
+The system automatically routes queries to the appropriate retrieval method based on query intent.
+
 ## 🏗️ Architecture
 
 ### System Components
@@ -213,29 +275,42 @@ See `.env.example` for a complete list.
 ## 📁 Project Structure
 
 ```
-advanced_rag/
-├── src/
-│   ├── graph/              # LangGraph workflow
-│   │   ├── nodes.py        # Core workflow nodes
-│   │   └── rag_graph.py    # Graph definition
-│   ├── tools/              # Specialized lookup tools
-│   │   ├── well_picks_tool.py
-│   │   ├── petro_params_tool.py
-│   │   ├── eval_params_tool.py
-│   │   └── retriever_tool.py
-│   ├── normalize/          # Query normalization
-│   ├── query/              # Query processing
-│   ├── loaders/            # Document loaders
-│   ├── processors/         # Text processing
-│   ├── evaluation/         # Evaluation framework
-│   └── monitoring/         # Performance monitoring
-├── data/
-│   ├── vectorstore/        # ChromaDB storage
-│   └── indices/            # Cached indices
-├── web_app.py              # Streamlit UI
-├── requirements.txt        # Dependencies
-└── README.md              # This file
+VolveRAG/
+├── advanced_rag/          # ✅ CURRENT SYSTEM (use this)
+│   ├── src/
+│   │   ├── graph/              # LangGraph workflow
+│   │   │   ├── nodes.py        # Core workflow nodes
+│   │   │   └── rag_graph.py    # Graph definition
+│   │   ├── tools/              # Specialized lookup tools
+│   │   │   ├── well_picks_tool.py
+│   │   │   ├── petro_params_tool.py
+│   │   │   ├── eval_params_tool.py
+│   │   │   └── retriever_tool.py
+│   │   ├── normalize/          # Query normalization
+│   │   ├── query/              # Query processing
+│   │   ├── loaders/            # Document loaders
+│   │   ├── processors/         # Text processing
+│   │   ├── evaluation/         # Evaluation framework
+│   │   └── monitoring/         # Performance monitoring
+│   ├── data/                    # Generated (not in repo)
+│   │   ├── vectorstore/        # ChromaDB storage
+│   │   └── indices/            # Cached indices
+│   ├── web_app.py              # Streamlit UI
+│   ├── requirements.txt        # Dependencies
+│   └── README.md              # Main documentation
+├── src/                  # ⚠️ LEGACY (deprecated, may be removed)
+├── spwla_volve-main/     # ❌ NOT IN REPO (data - download separately)
+├── DATA_POLICY.md        # Data handling policy
+├── EXTERNAL_TOOLS.md     # External dependencies
+├── LICENSE               # MIT License
+└── .gitignore           # Excludes data files
 ```
+
+**Important Notes**:
+- ✅ **Use `advanced_rag/`** for all new development and usage
+- ⚠️ **`src/` is legacy** and may be removed in future versions
+- ❌ **`spwla_volve-main/` should NOT be in the repository** - download separately
+- 📁 **`data/` directories** are generated during indexing and excluded from Git
 
 ## 🔍 How It Works
 
