@@ -277,13 +277,33 @@ def main():
                             if st.button(label, key=f"view_{key_suffix}"):
                                 st.session_state.viewer = {"path": c.source_path, "page": page}
 
+        # Check if vectorstore exists before allowing queries
+        graph = _get_graph(persist_dir, embedding_model, cache_version=2)
+        if graph is None:
+            st.error("⚠️ **Vector store not found!**")
+            st.info("""
+            **To build the index and use this application:**
+            
+            1. **Download the Volve dataset** from the official Equinor source
+            2. **Place it outside the repository** (e.g., `../spwla_volve-main/`)
+            3. **Build the index** by running:
+               ```bash
+               cd advanced_rag
+               python -m src.main --build-index --documents-path ../spwla_volve-main
+               ```
+            4. **Restart this application**
+            
+            **Note:** The vector store must be built locally before deploying to Streamlit Cloud.
+            See [DATA_POLICY.md](../DATA_POLICY.md) for details on why data files are not in the repository.
+            """)
+            st.stop()
+            return
+        
         # Chat input
         user_input = st.chat_input("Ask a question (typos ok).")
         if user_input and user_input.strip():
             st.session_state.messages.append({"role": "user", "content": user_input.strip()})
             with st.spinner("Thinking..."):
-                # Use cache_version=2 to ensure latest code is used
-                graph = _get_graph(persist_dir, embedding_model, cache_version=2)
                 result = graph.invoke({"messages": st.session_state.messages})
                 answer = result["messages"][-1].content
                 st.session_state.messages.append({"role": "assistant", "content": answer})
