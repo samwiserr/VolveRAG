@@ -118,9 +118,17 @@ class WellPicksTool:
         self._by_well: Dict[str, List[WellPickRow]] = {}
         self._well_labels: List[Tuple[str, str]] = []  # (original_label, normalized_key) for fuzzy matching
 
-        # Don't require the .dat file to exist in cloud deployments.
-        # If the .dat is missing but a cache exists, load from cache.
-        self._load_or_parse()
+        # Gracefully handle missing files - don't crash, just initialize empty
+        try:
+            self._load_or_parse()
+        except FileNotFoundError:
+            logger.warning(
+                f"[WELL_PICKS] Well picks data not available (dat: {self.dat_path}, cache: {self.cache_path}). Tool will return helpful messages."
+            )
+            # Initialize empty - tool will still work but return informative messages
+            self._rows = []
+            self._by_well = {}
+            self._well_labels = []
 
     def _load_or_parse(self) -> None:
         # If the .dat file is missing, try loading from cache directly.
@@ -357,6 +365,12 @@ class WellPicksTool:
 
     def lookup(self, query: str) -> str:
         logger.info(f"[WELL_PICKS] lookup called with query: '{query}'")
+        # If no data loaded, return helpful message
+        if not self._rows:
+            return (
+                "[WELL_PICKS] Well picks data not available. The .dat file and cache are missing. "
+                "You can still query well information using the document retrieval tool."
+            )
         
         # Try regex extraction first (for backwards compatibility and speed)
         well_q = _extract_query_well(query) or ""

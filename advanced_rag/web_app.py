@@ -167,10 +167,16 @@ def _get_graph(persist_dir: str, embedding_model: str, cache_version: int = 2):
     ]
     dat_path = next((str(p) for p in candidates if p.exists()), str(Path.cwd() / "Well_picks_Volve_v1.dat"))
 
-    tools = [
-        WellPicksTool(dat_path=dat_path).get_tool(),
-        retrieve_tool,
-    ]
+    # Start with retrieval tool; add WellPicksTool only if data/cache is available
+    tools = [retrieve_tool]
+    try:
+        cache_path = Path(persist_dir) / "well_picks_cache.json"
+        well_picks_tool = WellPicksTool(dat_path=dat_path, cache_path=str(cache_path))
+        if getattr(well_picks_tool, "_rows", None):
+            tools.insert(0, well_picks_tool.get_tool())
+    except Exception as e:
+        logger = __import__('logging').getLogger(__name__)
+        logger.warning(f"[WEB_APP] WellPicksTool not available: {e}. Continuing without it.")
 
     # Optional caches (if present they’ll be used for deterministic lookup + citations)
     section_index = Path(persist_dir) / "section_index.json"
