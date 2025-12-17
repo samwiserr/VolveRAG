@@ -847,6 +847,65 @@ def main():
                 result = graph.invoke({"messages": st.session_state.messages})
                 answer = result["messages"][-1].content
                 st.session_state.messages.append({"role": "assistant", "content": answer})
+                
+                # Debug information expander
+                with st.expander("🔍 Debug Info (click to view diagnostics)", expanded=False):
+                    st.write("**Query:**", user_input)
+                    
+                    # Check if petro cache exists
+                    vectorstore_dir = Path(__file__).resolve().parent / "data" / "vectorstore"
+                    cache_path = vectorstore_dir / "petro_params_cache.json"
+                    cache_exists = cache_path.exists()
+                    st.write(f"**Petro Cache Exists:** {cache_exists}")
+                    if cache_exists:
+                        st.write(f"**Cache Path:** `{cache_path}`")
+                    else:
+                        st.write(f"**Cache Path (not found):** `{cache_path}`")
+                    
+                    # Show normalized query info
+                    try:
+                        from src.normalize.query_normalizer import normalize_query, extract_well
+                        nq = normalize_query(user_input)
+                        extracted_well = extract_well(user_input)
+                        st.write(f"**Extracted Well:** `{extracted_well}`")
+                        st.write(f"**Normalized Query Well:** `{nq.well}`")
+                        st.write(f"**Normalized Query Formation:** `{nq.formation}`")
+                        st.write(f"**Normalized Query Property:** `{nq.property}`")
+                    except Exception as e:
+                        st.write(f"**Error extracting well:** {e}")
+                    
+                    # Check routing conditions
+                    ql = user_input.lower()
+                    param_keywords = ["petrophysical parameters", "petrophysical parameter", "net to gross", "net-to-gross", "netgros", "net/gross", "ntg", "n/g", "phif", "phi", "poro", "porosity", "water saturation", "sw", "klogh", "permeability", "permeab", "perm"]
+                    has_param_keyword = any(k in ql for k in param_keywords) or bool(re.search(r'\bsw\b', ql, re.IGNORECASE))
+                    has_well_pattern = ("15" in ql and "9" in ql) or (extracted_well is not None if 'extracted_well' in locals() else False)
+                    should_route = has_param_keyword and (cache_exists or has_well_pattern)
+                    
+                    st.write("---")
+                    st.write("**Routing Analysis:**")
+                    st.write(f"- Has Param Keyword: `{has_param_keyword}`")
+                    st.write(f"- Has Well Pattern: `{has_well_pattern}`")
+                    st.write(f"- Should Route to Petro Params: `{should_route}`")
+                    
+                    # Check what tools were called
+                    tool_calls = []
+                    for msg in result.get("messages", []):
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                tool_calls.append(tc.get("name", "unknown"))
+                    if tool_calls:
+                        st.write(f"**Tools Called:** {', '.join(tool_calls)}")
+                    else:
+                        st.write("**Tools Called:** None (query went to retriever/LLM)")
+                    
+                    # Show answer source
+                    if "[PETRO_PARAMS_JSON]" in answer or "[PETRO_PARAMS]" in answer:
+                        st.write("**Answer Source:** Petro Params Tool (structured)")
+                    elif "Source:" in answer:
+                        st.write("**Answer Source:** Retriever Tool (vector search)")
+                    else:
+                        st.write("**Answer Source:** LLM (generated)")
+                
                 st.rerun()
 
     with col_right:
