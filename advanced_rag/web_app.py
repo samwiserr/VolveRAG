@@ -163,15 +163,33 @@ def _download_and_extract_pdfs(zip_url: str, target_dir: Path) -> bool:
                 else:
                     # Files are at root level, extract directly
                     logger.info("ZIP contains files at root level. Extracting directly...")
-                    zip_ref.extractall(target_dir)
+                    # Extract all files, handling duplicates by keeping the last one
+                    extracted_files = set()
+                    for member in zip_ref.namelist():
+                        if member.endswith('/') or not member.lower().endswith('.pdf'):
+                            continue
+                        # Get just the filename (handle any path components)
+                        filename = Path(member).name
+                        dest_path = target_dir / filename
+                        # Extract to destination
+                        with zip_ref.open(member) as source:
+                            with open(dest_path, 'wb') as target:
+                                target.write(source.read())
+                        extracted_files.add(filename)
+                        logger.debug(f"Extracted: {filename}")
             
             # Verify extraction was successful by checking for PDF files
-            pdf_count = len(list(target_dir.glob("**/*.pdf")))
+            pdf_files = list(target_dir.glob("*.pdf"))
+            pdf_count = len(pdf_files)
             if pdf_count == 0:
                 logger.error(f"No PDFs found after extraction in {target_dir}")
+                # List what's actually in the directory
+                all_files = list(target_dir.iterdir())
+                logger.error(f"Directory contents: {[f.name for f in all_files[:10]]}")
                 return False
             
             logger.info(f"Extraction complete. Found {pdf_count} PDF files in {target_dir}")
+            logger.info(f"Sample PDFs: {[f.name for f in pdf_files[:5]]}")
             return True
             
         finally:
