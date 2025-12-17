@@ -235,25 +235,35 @@ def _ensure_pdfs_available(pdfs_dir: Path) -> bool:
 def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
     """
     Find a PDF file by name, searching in the downloaded PDFs directory.
+    Handles both original filenames and unique filenames with well prefix.
     
     Args:
         file_path: Original file path (may be a local Windows path or relative path)
+                  e.g., "..\\spwla_volve-main\\15_9-F-5\\PETROPHYSICAL_REPORT_1.PDF"
         pdfs_dir: Directory where PDFs are stored
         
     Returns:
         Path to the PDF file if found, None otherwise
     """
     original_path = Path(file_path)
-    filename = original_path.name
     
-    # Clean up filename - handle cases where path might have backslashes or relative paths
-    # Extract just the filename from paths like "..\spwla_volve-main\15_9-F15D\PETROPHYSICAL_REPORT_1.PDF"
-    if not filename or filename == original_path.stem:
-        # Try to get filename from the last component
-        parts = str(original_path).replace('\\', '/').split('/')
-        filename = parts[-1] if parts else original_path.name
+    # Clean up path - handle backslashes and relative paths
+    path_str = str(original_path).replace('\\', '/')
+    parts = [p for p in path_str.split('/') if p and p != '..' and p != '.']
     
-    logger.debug(f"[PDF_FIND] Looking for PDF: filename='{filename}', original_path='{file_path}', pdfs_dir='{pdfs_dir}'")
+    # Extract well directory and filename from path like:
+    # "spwla_volve-main/15_9-F-5/PETROPHYSICAL_REPORT_1.PDF" or
+    # "15_9-F15D/PETROPHYSICAL_REPORT_1.PDF"
+    filename = parts[-1] if parts else original_path.name
+    well_dir = None
+    if len(parts) >= 2:
+        # Try to find well directory (usually contains numbers and dashes)
+        for part in parts[-2::-1]:  # Check parts from end backwards
+            if re.match(r'^\d+[\s_/-]*\d+', part):  # Matches patterns like "15_9-F-5", "15_9-F15D"
+                well_dir = part
+                break
+    
+    logger.debug(f"[PDF_FIND] Looking for PDF: filename='{filename}', well_dir='{well_dir}', original_path='{file_path}', pdfs_dir='{pdfs_dir}'")
     
     # If the original path exists (local development), use it
     if original_path.exists():
@@ -262,26 +272,49 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
     
     # Search in PDFs directory
     if pdfs_dir.exists():
-        # Try exact match first
+        # Strategy 1: Try unique filename format (well_dir_filename.pdf)
+        if well_dir:
+            unique_name = f"{well_dir}_{filename}"
+            unique_match = pdfs_dir / unique_name
+            if unique_match.exists():
+                logger.debug(f"[PDF_FIND] Found PDF via unique name: {unique_match}")
+                return unique_match
+        
+        # Strategy 2: Try exact filename match
         exact_match = pdfs_dir / filename
         if exact_match.exists():
             logger.debug(f"[PDF_FIND] Found PDF at exact match: {exact_match}")
             return exact_match
         
-        # Try recursive search (handles subdirectories)
+        # Strategy 3: Try recursive search (handles subdirectories)
         matches = list(pdfs_dir.glob(f"**/{filename}"))
         if matches:
             logger.debug(f"[PDF_FIND] Found PDF via recursive search: {matches[0]}")
             return matches[0]
         
-        # Try case-insensitive search
-        for pdf_file in pdfs_dir.glob("**/*.pdf"):
+        # Strategy 4: Try case-insensitive search with unique name
+        if well_dir:
+            unique_pattern = f"{well_dir}_*{filename}"
+            unique_matches = list(pdfs_dir.glob(unique_pattern))
+            if unique_matches:
+                logger.debug(f"[PDF_FIND] Found PDF via unique pattern: {unique_matches[0]}")
+                return unique_matches[0]
+        
+        # Strategy 5: Try case-insensitive search by filename only
+        for pdf_file in pdfs_dir.glob("*.pdf"):
             if pdf_file.name.lower() == filename.lower():
                 logger.debug(f"[PDF_FIND] Found PDF via case-insensitive search: {pdf_file}")
                 return pdf_file
         
+        # Strategy 6: Try partial match (filename contains the target filename)
+        filename_lower = filename.lower()
+        for pdf_file in pdfs_dir.glob("*.pdf"):
+            if filename_lower in pdf_file.name.lower() or pdf_file.name.lower() in filename_lower:
+                logger.debug(f"[PDF_FIND] Found PDF via partial match: {pdf_file}")
+                return pdf_file
+        
         # Log what PDFs are actually available for debugging
-        available_pdfs = list(pdfs_dir.glob("**/*.pdf"))[:5]  # First 5 for logging
+        available_pdfs = list(pdfs_dir.glob("*.pdf"))[:10]  # First 10 for logging
         logger.debug(f"[PDF_FIND] PDF not found. Available PDFs (sample): {[p.name for p in available_pdfs]}")
     else:
         logger.debug(f"[PDF_FIND] PDFs directory does not exist: {pdfs_dir}")
