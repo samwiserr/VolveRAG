@@ -257,9 +257,14 @@ def generate_query_or_respond(state: MessagesState, tools):
 
         # Smart next-step: bounded agentic resolver (well+formation+property) for heavy-typo inputs.
         # Only invoke when deterministic parse is missing key entities for a fact-like query.
+        # BUT: Skip entity resolution for param queries - let routing handle it directly
         if isinstance(question, str):
             looks_facty = any(t in ql for t in ["dens", "rho", "archie", "gr", "net", "gross", "phif", "sw", "klogh", "rw", "temperature"])
-            if looks_facty and (nq.well is None or nq.property is None or nq.formation is None):
+            # Check if this is a param query that should route directly to tool
+            is_likely_param_query = any(k in ql for k in ["water saturation", "sw", "phif", "porosity", "net to gross", "klogh", "permeability", "petrophysical parameter"])
+            
+            # Only do entity resolution if it's NOT a param query (param queries should route directly)
+            if looks_facty and (nq.well is None or nq.property is None or nq.formation is None) and not is_likely_param_query:
                 try:
                     er = resolve_with_bounded_agent(question, persist_dir="./data/vectorstore")
                     if er.needs_clarification and er.clarification_question:
@@ -279,7 +284,8 @@ def generate_query_or_respond(state: MessagesState, tools):
                         )
                 except Exception:
                     # If resolver fails and we still don't have a well for a fact query, ask for clarification
-                    if looks_facty and not nq.well:
+                    # BUT: Skip this for param queries - let routing handle it
+                    if looks_facty and not nq.well and not is_likely_param_query:
                         return {"messages": [AIMessage(content="I couldn't identify which well you're asking about. Please specify the well name clearly (e.g., 15/9-F-5, 19/9-19 bt2).")]}
                     pass
 
