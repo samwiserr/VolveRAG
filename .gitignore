@@ -122,3 +122,10 @@ advanced_rag/data/processed/rag_system.log
 out.txt
 *.bak
 
+# Large asset files (hosted on GitHub Releases, not in repo)
+app_assets.zip
+app_assets.tgz
+*.zip
+*.tgz
+*.tar.gz
+

@@ -13,6 +13,10 @@ from __future__ import annotations
 import base64
 import os
 import re
+import zipfile
+import urllib.request
+import tempfile
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 import logging
@@ -29,6 +33,8 @@ from src.tools.retriever_tool import RetrieverTool
 from src.tools.section_lookup_tool import SectionLookupTool
 from src.tools.structured_facts_tool import StructuredFactsTool
 from src.tools.well_picks_tool import WellPicksTool
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -137,6 +143,132 @@ def _render_pdf_page_png(file_path: str, page_1based: int, zoom: float = 2.0) ->
             doc.close()
     except Exception:
         return None
+
+
+def _download_and_extract_vectorstore(zip_url: str, target_dir: Path) -> bool:
+    """
+    Download ZIP from URL and extract to target directory.
+    Handles ZIP files with a single root directory or files at root.
+    
+    Args:
+        zip_url: URL to the ZIP file
+        target_dir: Directory where vectorstore should be extracted
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        logger.info(f"Downloading vectorstore from {zip_url}...")
+        
+        # Create target directory if it doesn't exist
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Download to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
+            tmp_zip_path = tmp_file.name
+        
+        try:
+            # Download with progress
+            urllib.request.urlretrieve(zip_url, tmp_zip_path)
+            logger.info(f"Download complete. Extracting to {target_dir}...")
+            
+            # Extract ZIP
+            with zipfile.ZipFile(tmp_zip_path, 'r') as zip_ref:
+                # Get list of all file paths in ZIP
+                all_files = zip_ref.namelist()
+                
+                # Check if all files are under a single root directory
+                root_dirs = set()
+                for file_path in all_files:
+                    # Skip empty entries
+                    if not file_path or file_path.endswith('/'):
+                        continue
+                    # Get the first directory component
+                    parts = file_path.split('/')
+                    if len(parts) > 1:
+                        root_dirs.add(parts[0])
+                
+                # If there's a single root directory, extract its contents
+                if len(root_dirs) == 1:
+                    root_dir = list(root_dirs)[0]
+                    logger.info(f"ZIP contains root directory '{root_dir}'. Extracting contents...")
+                    
+                    # Extract to temporary location first
+                    with tempfile.TemporaryDirectory() as tmp_extract:
+                        zip_ref.extractall(tmp_extract)
+                        source_dir = Path(tmp_extract) / root_dir
+                        
+                        # Move contents from root_dir to target_dir
+                        if source_dir.exists():
+                            for item in source_dir.iterdir():
+                                dest = target_dir / item.name
+                                if item.is_dir():
+                                    if dest.exists():
+                                        shutil.rmtree(dest)
+                                    shutil.copytree(item, dest)
+                                else:
+                                    shutil.copy2(item, dest)
+                else:
+                    # Files are at root level, extract directly
+                    logger.info("ZIP contains files at root level. Extracting directly...")
+                    zip_ref.extractall(target_dir)
+            
+            # Verify extraction was successful by checking for chroma.sqlite3
+            chroma_db = target_dir / "chroma.sqlite3"
+            if not chroma_db.exists():
+                logger.error(f"Extraction incomplete: chroma.sqlite3 not found in {target_dir}")
+                # List what was actually extracted for debugging
+                extracted = list(target_dir.iterdir())
+                logger.error(f"Extracted items: {[str(p.name) for p in extracted]}")
+                return False
+            
+            logger.info(f"Extraction complete. Vectorstore ready at {target_dir}")
+            logger.info(f"Found files: chroma.sqlite3, {len(list(target_dir.glob('*.json')))} cache files")
+            return True
+            
+        finally:
+            # Clean up temporary ZIP file
+            if Path(tmp_zip_path).exists():
+                Path(tmp_zip_path).unlink()
+                
+    except Exception as e:
+        logger.error(f"Failed to download/extract vectorstore: {e}", exc_info=True)
+        return False
+
+
+def _ensure_vectorstore_available(persist_dir: str) -> bool:
+    """
+    Ensure vectorstore exists, downloading from URL if needed.
+    
+    Args:
+        persist_dir: Directory where vectorstore should be located
+        
+    Returns:
+        True if vectorstore is available, False otherwise
+    """
+    persist_path = Path(persist_dir)
+    
+    # Check if vectorstore already exists
+    if persist_path.exists():
+        # Check for key files that indicate a valid vectorstore
+        chroma_db = persist_path / "chroma.sqlite3"
+        if chroma_db.exists():
+            return True
+    
+    # Try to get VECTORSTORE_URL from environment or Streamlit secrets
+    vectorstore_url = os.getenv("VECTORSTORE_URL")
+    if not vectorstore_url:
+        try:
+            if "VECTORSTORE_URL" in st.secrets:
+                vectorstore_url = str(st.secrets["VECTORSTORE_URL"])
+        except Exception:
+            pass
+    
+    if not vectorstore_url:
+        return False  # No URL configured, can't download
+    
+    # Download and extract
+    return _download_and_extract_vectorstore(vectorstore_url, persist_path)
 
 
 @st.cache_resource(show_spinner=False)
@@ -303,6 +435,49 @@ def main():
                             if st.button(label, key=f"view_{key_suffix}"):
                                 st.session_state.viewer = {"path": c.source_path, "page": page}
 
+        # Ensure vectorstore is available (download if needed)
+        if not _ensure_vectorstore_available(persist_dir):
+            # Show a message if download is in progress or failed
+            vectorstore_url = os.getenv("VECTORSTORE_URL")
+            if not vectorstore_url:
+                try:
+                    if "VECTORSTORE_URL" in st.secrets:
+                        vectorstore_url = str(st.secrets["VECTORSTORE_URL"])
+                except Exception:
+                    pass
+            
+            if vectorstore_url:
+                with st.spinner("Downloading vectorstore... This may take a few minutes on first run."):
+                    if _ensure_vectorstore_available(persist_dir):
+                        st.success("Vectorstore downloaded successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to download vectorstore. Please check the VECTORSTORE_URL and try again.")
+                        st.info(f"Attempted URL: {vectorstore_url}")
+                        st.stop()
+            else:
+                # No URL configured - show the original error message
+                st.error("⚠️ **Vector store not found!**")
+                st.info("""
+                **To build the index and use this application:**
+                
+                1. **Download the Volve dataset** from the official Equinor source
+                2. **Place it outside the repository** (e.g., `../spwla_volve-main/`)
+                3. **Build the index** by running:
+                   ```bash
+                   cd advanced_rag
+                   python -m src.main --build-index --documents-path ../spwla_volve-main
+                   ```
+                4. **Restart this application**
+                
+                **Note:** The vector store must be built locally before deploying to Streamlit Cloud.
+                See [DATA_POLICY.md](../DATA_POLICY.md) for details on why data files are not in the repository.
+                
+                **Alternative:** Set `VECTORSTORE_URL` in Streamlit Cloud Secrets to automatically download a pre-built vectorstore.
+                """)
+                st.stop()
+                return
+        
         # Check if vectorstore exists before allowing queries
         graph = _get_graph(persist_dir, embedding_model, cache_version=2)
         if graph is None:
