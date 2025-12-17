@@ -415,8 +415,6 @@ def generate_query_or_respond(state: MessagesState, tools):
         if is_param_query:
             logger.info(f"[ROUTING] ✅ Detected param query - routing to lookup_petrophysical_params. Query: '{question[:100]}'")
             logger.info(f"[ROUTING] has_param_keyword={has_param_keyword}, has_petro_cache={has_petro_cache}, has_well_pattern={has_well_pattern}")
-        else:
-            logger.warning(f"[ROUTING] ❌ NOT routing to petro params tool. has_param_keyword={has_param_keyword}, has_petro_cache={has_petro_cache}, has_well_pattern={has_well_pattern}")
             forced = AIMessage(
                 content="",
                 tool_calls=[
@@ -428,6 +426,8 @@ def generate_query_or_respond(state: MessagesState, tools):
                 ],
             )
             return {"messages": [forced]}
+        else:
+            logger.warning(f"[ROUTING] ❌ NOT routing to petro params tool. has_param_keyword={has_param_keyword}, has_petro_cache={has_petro_cache}, has_well_pattern={has_well_pattern}")
 
         # Check for specific well name FIRST before checking wants_all_wells
         # This prevents "all formations in Well NO 15/9-F-15 A" from matching wants_all_wells
