@@ -20,6 +20,8 @@ from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
 
+from .well_picks_tool import _norm_well as _norm_well_picks
+
 logger = logging.getLogger(__name__)
 
 
@@ -214,9 +216,53 @@ class PetroParamsTool:
                 {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-12."},
                 ensure_ascii=False,
             )
+
+        # Multi-strategy well matching (same approach as FormationPropertiesTool)
         nwell = _norm_well(well)
         rows = self._by_well.get(nwell, [])
+
         if not rows:
+            # Try normalizing like well picks (remove NO/WELL etc)
+            try:
+                nw2 = _norm_well_picks(well)
+            except Exception:
+                nw2 = None
+            if nw2:
+                rows = self._by_well.get(nw2, [])
+
+        if not rows:
+            # Try extracting just the numeric/cleaned part
+            cleaned = well.upper().replace("WELL", "").replace("NO", "").strip()
+            nw3 = _norm_well(cleaned)
+            rows = self._by_well.get(nw3, [])
+
+        if not rows:
+            # Try matching against all stored well keys using normalized comparisons and substrings
+            query_norm_clean = _norm_well(cleaned if 'cleaned' in locals() else well)
+            query_norm_picks = None
+            try:
+                query_norm_picks = _norm_well_picks(well)
+            except Exception:
+                query_norm_picks = None
+
+            for stored_norm, stored_rows in self._by_well.items():
+                if not stored_rows:
+                    continue
+                if query_norm_clean == stored_norm or (query_norm_picks and query_norm_picks == stored_norm):
+                    rows = stored_rows
+                    break
+                # Substring matching
+                if query_norm_clean in stored_norm or stored_norm in query_norm_clean:
+                    rows = stored_rows
+                    break
+                if query_norm_picks and (query_norm_picks in stored_norm or stored_norm in query_norm_picks):
+                    rows = stored_rows
+                    break
+
+        if not rows:
+            # Log available wells for debugging (sample)
+            available_wells = sorted([r.well for rows_list in self._by_well.values() for r in (rows_list[:1] if rows_list else [])])[:10]
+            logger.warning(f"[PETRO_PARAMS] No rows found for well '{well}' (normalized: {nwell}). Available wells (sample): {available_wells}")
             return "[PETRO_PARAMS_JSON] " + json.dumps(
                 {"error": "no_rows_for_well", "well": well, "message": f"No petrophysical parameter rows found for well {well}."},
                 ensure_ascii=False,

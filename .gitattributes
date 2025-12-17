@@ -7,3 +7,4 @@ advanced_rag/data/vectorstore/**/*.bin filter=lfs diff=lfs merge=lfs -text
 advanced_rag/data/vectorstore/**/*.pickle filter=lfs diff=lfs merge=lfs -text
 
 
+

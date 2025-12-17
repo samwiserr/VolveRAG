@@ -136,3 +136,4 @@ Now complete this query: "{query}"
         return [query]  # Fallback to original query
 
 
+

@@ -186,3 +186,4 @@ if metrics:
         st.dataframe(recent_df[['timestamp', 'metric', 'value']], use_container_width=True)
 
 
+

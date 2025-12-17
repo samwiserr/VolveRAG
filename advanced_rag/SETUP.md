@@ -117,3 +117,4 @@ python -m src.main --query "What formations are in well 15/9-F-5?"
 - **Mac**: `brew install tesseract`
 
 
+
