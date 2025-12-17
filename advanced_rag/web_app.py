@@ -852,7 +852,7 @@ def main():
                 png = _render_pdf_page_png(vp, vpage)
                 if png:
                     st.caption(f"Cited page preview (page {vpage})")
-                    st.image(png, use_container_width=True)
+                    st.image(png, width='stretch')
             st.markdown(_pdf_iframe(vp, vpage), unsafe_allow_html=True)
         else:
             st.info("Click **View page** next to a source to open it here.")

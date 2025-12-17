@@ -237,7 +237,8 @@ class PetroParamsTool:
             rows = self._by_well.get(nw3, [])
 
         if not rows:
-            # Try matching against all stored well keys using normalized comparisons and substrings
+            # Try matching against all stored well keys using normalized comparisons
+            # Use exact match only - avoid substring matching which can cause false positives
             query_norm_clean = _norm_well(cleaned if 'cleaned' in locals() else well)
             query_norm_picks = None
             try:
@@ -245,19 +246,38 @@ class PetroParamsTool:
             except Exception:
                 query_norm_picks = None
 
+            logger.debug(f"[PETRO_PARAMS] Trying fuzzy matching for well '{well}' (norm_clean='{query_norm_clean}', norm_picks='{query_norm_picks}')")
+            
+            # First pass: exact matches only
             for stored_norm, stored_rows in self._by_well.items():
                 if not stored_rows:
                     continue
                 if query_norm_clean == stored_norm or (query_norm_picks and query_norm_picks == stored_norm):
+                    logger.info(f"[PETRO_PARAMS] Found exact match: '{well}' -> '{stored_norm}'")
                     rows = stored_rows
                     break
-                # Substring matching
-                if query_norm_clean in stored_norm or stored_norm in query_norm_clean:
-                    rows = stored_rows
-                    break
-                if query_norm_picks and (query_norm_picks in stored_norm or stored_norm in query_norm_picks):
-                    rows = stored_rows
-                    break
+            
+            # Second pass: only if no exact match, try very strict substring matching
+            # Only match if one is a clear prefix/suffix of the other (e.g., "159F5" vs "159F5A")
+            if not rows:
+                for stored_norm, stored_rows in self._by_well.items():
+                    if not stored_rows:
+                        continue
+                    # Only match if one well is clearly a variant of the other
+                    # e.g., "159F5" should match "159F5A" but NOT "159F15D"
+                    if query_norm_clean and stored_norm:
+                        # Check if one starts with the other (with at least 4 chars overlap)
+                        if len(query_norm_clean) >= 4 and len(stored_norm) >= 4:
+                            if (stored_norm.startswith(query_norm_clean[:4]) and 
+                                abs(len(query_norm_clean) - len(stored_norm)) <= 2):
+                                logger.info(f"[PETRO_PARAMS] Found prefix match: '{well}' -> '{stored_norm}'")
+                                rows = stored_rows
+                                break
+                            if (query_norm_clean.startswith(stored_norm[:4]) and 
+                                abs(len(query_norm_clean) - len(stored_norm)) <= 2):
+                                logger.info(f"[PETRO_PARAMS] Found prefix match: '{well}' -> '{stored_norm}'")
+                                rows = stored_rows
+                                break
 
         if not rows:
             # Log available wells for debugging (sample)
