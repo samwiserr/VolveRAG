@@ -210,8 +210,11 @@ class PetroParamsTool:
         - a formation column (formation only)
         - full table (well only)
         """
+        logger.info(f"[PETRO_PARAMS] lookup() called with query: '{query}'")
         well = _extract_well(query)
+        logger.info(f"[PETRO_PARAMS] Extracted well: '{well}'")
         if not well:
+            logger.warning(f"[PETRO_PARAMS] No well detected in query: '{query}'")
             return "[PETRO_PARAMS_JSON] " + json.dumps(
                 {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-12."},
                 ensure_ascii=False,
@@ -282,7 +285,10 @@ class PetroParamsTool:
         if not rows:
             # Log available wells for debugging (sample)
             available_wells = sorted([r.well for rows_list in self._by_well.values() for r in (rows_list[:1] if rows_list else [])])[:10]
-            logger.warning(f"[PETRO_PARAMS] No rows found for well '{well}' (normalized: {nwell}). Available wells (sample): {available_wells}")
+            all_normalized_wells = sorted(list(self._by_well.keys()))[:10]
+            logger.warning(f"[PETRO_PARAMS] ❌ No rows found for well '{well}' (normalized: '{nwell}')")
+            logger.warning(f"[PETRO_PARAMS] Available wells (sample): {available_wells}")
+            logger.warning(f"[PETRO_PARAMS] Available normalized well keys (sample): {all_normalized_wells}")
             return "[PETRO_PARAMS_JSON] " + json.dumps(
                 {"error": "no_rows_for_well", "well": well, "message": f"No petrophysical parameter rows found for well {well}."},
                 ensure_ascii=False,
