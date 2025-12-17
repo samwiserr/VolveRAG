@@ -393,11 +393,18 @@ def generate_query_or_respond(state: MessagesState, tools):
         vectorstore_dir = Path(__file__).resolve().parents[2] / "data" / "vectorstore"
         has_petro_cache = (vectorstore_dir / "petro_params_cache.json").exists()
 
-        is_param_query = (
-            (any(k in ql for k in ["petrophysical parameters", "petrophysical parameter", "net to gross", "net-to-gross", "netgros", "net/gross", "ntg", "n/g", "phif", "phi", "poro", "porosity", "water saturation", " sw", "klogh", "permeability", "permeab", "perm"]) or re.search(r'\bk\b', ql, re.IGNORECASE))
-            and (has_petro_cache or ("15" in ql and "9" in ql))
-        )
+        # Check for parameter keywords (including variations)
+        param_keywords = ["petrophysical parameters", "petrophysical parameter", "net to gross", "net-to-gross", "netgros", "net/gross", "ntg", "n/g", "phif", "phi", "poro", "porosity", "water saturation", "sw", "klogh", "permeability", "permeab", "perm"]
+        has_param_keyword = any(k in ql for k in param_keywords) or re.search(r'\bsw\b', ql, re.IGNORECASE) or re.search(r'\bk\b', ql, re.IGNORECASE)
+        
+        # Check for well pattern (15/9 or similar)
+        has_well_pattern = ("15" in ql and "9" in ql) or extract_well(question) is not None or nq.well is not None
+        
+        is_param_query = has_param_keyword and (has_petro_cache or has_well_pattern)
+        
         if is_param_query:
+            logger.info(f"[ROUTING] Detected param query - routing to lookup_petrophysical_params. Query: '{question[:100]}'")
+            logger.info(f"[ROUTING] has_param_keyword={has_param_keyword}, has_petro_cache={has_petro_cache}, has_well_pattern={has_well_pattern}")
             forced = AIMessage(
                 content="",
                 tool_calls=[
