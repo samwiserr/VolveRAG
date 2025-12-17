@@ -219,7 +219,7 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
     Find a PDF file by name, searching in the downloaded PDFs directory.
     
     Args:
-        file_path: Original file path (may be a local Windows path)
+        file_path: Original file path (may be a local Windows path or relative path)
         pdfs_dir: Directory where PDFs are stored
         
     Returns:
@@ -228,8 +228,18 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
     original_path = Path(file_path)
     filename = original_path.name
     
-    # If the original path exists, use it
+    # Clean up filename - handle cases where path might have backslashes or relative paths
+    # Extract just the filename from paths like "..\spwla_volve-main\15_9-F15D\PETROPHYSICAL_REPORT_1.PDF"
+    if not filename or filename == original_path.stem:
+        # Try to get filename from the last component
+        parts = str(original_path).replace('\\', '/').split('/')
+        filename = parts[-1] if parts else original_path.name
+    
+    logger.debug(f"[PDF_FIND] Looking for PDF: filename='{filename}', original_path='{file_path}', pdfs_dir='{pdfs_dir}'")
+    
+    # If the original path exists (local development), use it
     if original_path.exists():
+        logger.debug(f"[PDF_FIND] Found PDF at original path: {original_path}")
         return original_path
     
     # Search in PDFs directory
@@ -237,17 +247,26 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
         # Try exact match first
         exact_match = pdfs_dir / filename
         if exact_match.exists():
+            logger.debug(f"[PDF_FIND] Found PDF at exact match: {exact_match}")
             return exact_match
         
-        # Try recursive search
+        # Try recursive search (handles subdirectories)
         matches = list(pdfs_dir.glob(f"**/{filename}"))
         if matches:
+            logger.debug(f"[PDF_FIND] Found PDF via recursive search: {matches[0]}")
             return matches[0]
         
         # Try case-insensitive search
         for pdf_file in pdfs_dir.glob("**/*.pdf"):
             if pdf_file.name.lower() == filename.lower():
+                logger.debug(f"[PDF_FIND] Found PDF via case-insensitive search: {pdf_file}")
                 return pdf_file
+        
+        # Log what PDFs are actually available for debugging
+        available_pdfs = list(pdfs_dir.glob("**/*.pdf"))[:5]  # First 5 for logging
+        logger.debug(f"[PDF_FIND] PDF not found. Available PDFs (sample): {[p.name for p in available_pdfs]}")
+    else:
+        logger.debug(f"[PDF_FIND] PDFs directory does not exist: {pdfs_dir}")
     
     return None
 
