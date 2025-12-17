@@ -1153,8 +1153,67 @@ def generate_answer(state: MessagesState):
                 return {"messages": [AIMessage(content="Petrophysical parameters: failed to parse structured payload.")]}
 
             if isinstance(payload, dict) and payload.get("error"):
-                # Deterministic fallback: allow downstream to use retriever context
-                break
+                # Provide helpful deterministic error message instead of breaking
+                error_type = payload.get("error", "")
+                error_message = payload.get("message", "Unknown error")
+                well = payload.get("well", "")
+                
+                # If well not found, try to suggest available wells
+                if error_type == "no_rows_for_well" or "no rows found" in error_message.lower():
+                    # Try to get available wells from the cache
+                    try:
+                        vectorstore_dir = Path(__file__).resolve().parents[2] / "data" / "vectorstore"
+                        cache_path = vectorstore_dir / "petro_params_cache.json"
+                        if cache_path.exists():
+                            with open(cache_path, 'r', encoding='utf-8') as f:
+                                cache_data = json.load(f)
+                            # Extract unique well names from cache
+                            available_wells = set()
+                            if isinstance(cache_data, dict) and "rows" in cache_data:
+                                for row in cache_data.get("rows", []):
+                                    if isinstance(row, dict) and "well" in row:
+                                        available_wells.add(row["well"])
+                            available_wells_list = sorted(list(available_wells))[:10]
+                            
+                            if available_wells_list:
+                                out = [
+                                    f"No petrophysical parameter data found for well {well}.",
+                                    "",
+                                    f"Available wells with petrophysical data: {', '.join(available_wells_list)}.",
+                                    "",
+                                    "Please try querying one of the available wells, or check if the well name is correct."
+                                ]
+                            else:
+                                out = [
+                                    f"No petrophysical parameter data found for well {well}.",
+                                    "",
+                                    error_message
+                                ]
+                        else:
+                            out = [
+                                f"No petrophysical parameter data found for well {well}.",
+                                "",
+                                error_message
+                            ]
+                    except Exception as e:
+                        logger.warning(f"[ANSWER] Failed to get available wells: {e}")
+                        out = [
+                            f"No petrophysical parameter data found for well {well}.",
+                            "",
+                            error_message
+                        ]
+                elif error_type == "no_well_detected":
+                    out = [
+                        "No well detected in your query.",
+                        "",
+                        "Please specify a well name, for example: 'What is the water saturation for Hugin formation in 15/9-F-5?'"
+                    ]
+                else:
+                    out = [
+                        f"Error retrieving petrophysical parameters: {error_message}",
+                    ]
+                
+                return {"messages": [AIMessage(content="\n".join(out))]}
 
             well = payload.get("well") or ""
             formations = payload.get("formations") or []
