@@ -25,6 +25,13 @@ from typing import List, Optional
 import streamlit as st
 from dotenv import load_dotenv
 
+# Configure logging to ensure messages are visible
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Override any existing config
+)
+
 from src.graph.rag_graph import build_rag_graph
 from src.tools.formation_properties_tool import FormationPropertiesTool
 from src.tools.eval_params_tool import EvalParamsTool
