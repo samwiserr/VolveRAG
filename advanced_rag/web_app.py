@@ -1011,10 +1011,13 @@ def _get_graph(persist_dir: str, embedding_model: str, cache_version: int = 2):
 
         # One-shot formations + properties tool
         try:
+            # Resolve well_picks_cache_path to absolute
+            well_picks_cache = Path(__file__).resolve().parent / "data" / "well_picks_cache.json"
             tools.append(
                 FormationPropertiesTool(
                     well_picks_dat_path=dat_path,
                     petro_params_cache_path=str(petro_cache),
+                    well_picks_cache_path=str(well_picks_cache),  # Pass absolute path
                 ).get_tool()
             )
         except Exception:
