@@ -696,8 +696,10 @@ class RetrieverTool:
         import re
         # Pattern: 15/9-19A, 15_9-19A, 15-9-19A, 15/9-F5, 15/9-F-5, etc.
         # Handle both F5 and F-5 formats
-        # Try full well name first (15/9-19A)
+        # Try full well name first (15/9-19A, 15/9-F5, 15/9-F-5)
+        # Handle both F5 and F-5 formats
         patterns = [
+            r'(15[_\s/-]9[_\s/-]?[Ff][\s_/-]*-?\s*\d+[A-Z]?)',  # 15/9-F5 or 15/9-F-5 format
             r'(15[_\s/-]9[_\s/-]?\d+[A-Z]?)',  # 15/9-19A format (full well name)
             r'well\s+(15[_\s/-]9[_\s/-]?\d+[A-Z]?)',  # "well 15/9-19A"
             r'(15[_\s/-]9[_\s/-]?[-]?\d+[A-Z]?)',  # 15/9-19A with optional dash
