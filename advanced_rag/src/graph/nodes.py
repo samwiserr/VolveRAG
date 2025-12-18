@@ -245,6 +245,9 @@ def generate_query_or_respond(state: MessagesState, tools):
             elif rewritten != question:
                 question = rewritten
                 logger.info(f"[QUERY_DECOMPOSITION] Using rewritten query: '{question}'")
+        
+        # Update ql after query decomposition/rewriting
+        ql = question.lower() if isinstance(question, str) else ""
 
         # Normalize -> Resolve (deterministic, runs before any retrieval)
         nq = normalize_query(question if isinstance(question, str) else "")
