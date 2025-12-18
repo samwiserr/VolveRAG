@@ -42,7 +42,14 @@ def _md5_file(p: Path) -> str:
 
 
 def _norm_well_key(s: str) -> str:
-    return re.sub(r"[^0-9A-Z]+", "", s.upper())
+    # Normalize well name by removing all non-alphanumeric characters
+    # Also strip common suffixes that might be accidentally included (e.g., "PARAMETER", "EVALUATION")
+    normalized = re.sub(r"[^0-9A-Z]+", "", s.upper())
+    # Remove common suffixes that might be appended during parsing
+    for suffix in ["PARAMETER", "EVALUATION", "PARAMETERS", "TABLE"]:
+        if normalized.endswith(suffix):
+            normalized = normalized[:-len(suffix)]
+    return normalized
 
 
 def _canonicalize_well(s: str) -> str:
@@ -83,6 +90,10 @@ def _parse_eval_params_page(text: str) -> Optional[Tuple[str, List[str], Dict[st
     well = _extract_well(block) or _extract_well(text)
     if not well:
         return None
+    # Clean up well name - remove any trailing text like "PARAMETER" that might have been included
+    well = well.split('\n')[0].strip()  # Take first line only
+    well = re.sub(r'\s+PARAMETER.*$', '', well, flags=re.IGNORECASE)  # Remove "PARAMETER" suffix
+    well = well.strip()
 
     lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
     # Find header line containing "Parameter"
