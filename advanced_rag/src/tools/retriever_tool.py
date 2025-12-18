@@ -717,8 +717,13 @@ class RetrieverTool:
     
     def _filter_docs_by_well(self, docs: List[Document], well_name: str) -> List[Document]:
         """Filter documents to only those containing the specified well name."""
+        import re
         normalized_query_well = self._normalize_well_name(well_name)
         filtered_docs = []
+        
+        # Extract just the well identifier part (e.g., "F-5" from "15/9-F-5")
+        well_id_match = re.search(r'([Ff][\s_/-]*-?\s*\d+[A-Z]?|\d+[A-Z]?)$', well_name)
+        well_id = well_id_match.group(1) if well_id_match else well_name
         
         for doc in docs:
             doc_text = doc.page_content.upper()
@@ -726,24 +731,35 @@ class RetrieverTool:
             doc_filename = doc.metadata.get('filename', '').upper()
             
             # Check if document contains the well name in various formats
+            # Use the well_id (e.g., "F-5") instead of full well_name to avoid duplication
             well_variants = [
                 well_name.upper(),
-                f"15/9-{well_name}",
-                f"15_9-{well_name}",
-                f"15-9-{well_name}",
-                f"15/9-{well_name.replace('A', '')}A",  # Handle A suffix variations
-                f"NO 15/9-{well_name}",
-                f"NO_15/9-{well_name}",
-                f"NO 15_9-{well_name}",
-                f"NO 15-9-{well_name}",
+                f"15/9-{well_id.upper()}",
+                f"15_9-{well_id.upper()}",
+                f"15-9-{well_id.upper()}",
+                f"NO 15/9-{well_id.upper()}",
+                f"NO_15/9-{well_id.upper()}",
+                f"NO 15_9-{well_id.upper()}",
+                f"NO 15-9-{well_id.upper()}",
             ]
             
-            # Check normalized well name
+            # Check normalized well name with word boundaries to avoid false matches
+            # e.g., "159F5" should not match "159F15" or "159F1"
             doc_normalized = self._normalize_well_name(doc_text)
-            if (normalized_query_well in doc_normalized or
-                any(variant in doc_text for variant in well_variants) or
-                any(variant in doc_source for variant in well_variants) or
-                any(variant in doc_filename for variant in well_variants)):
+            # Use word boundary matching to ensure exact well identifier match
+            # The normalized format removes separators, so we need to check for exact match
+            # Pattern: well identifier must be preceded/followed by non-alphanumeric or start/end
+            well_pattern = re.compile(r'(^|[^0-9A-Z])' + re.escape(normalized_query_well) + r'([^0-9A-Z]|$)', re.IGNORECASE)
+            
+            # Check if well name appears in document (with boundaries for exact match)
+            matches = (
+                well_pattern.search(doc_normalized) or  # Exact normalized match with boundaries
+                any(re.search(r'\b' + re.escape(variant) + r'\b', doc_text) for variant in well_variants) or
+                any(re.search(r'\b' + re.escape(variant) + r'\b', doc_source) for variant in well_variants) or
+                any(re.search(r'\b' + re.escape(variant) + r'\b', doc_filename) for variant in well_variants)
+            )
+            
+            if matches:
                 filtered_docs.append(doc)
         
         return filtered_docs
@@ -953,6 +969,15 @@ class RetrieverTool:
                     else:
                         general_docs = self.retriever.invoke(query)
                     
+                    # CRITICAL FIX: Filter general docs by well name if specified
+                    if well_name and not is_comprehensive_list:
+                        original_count = len(general_docs)
+                        general_docs = self._filter_docs_by_well(general_docs, well_name)
+                        if general_docs:
+                            logger.info(f"[RETRIEVE] Filtered general docs to {len(general_docs)} chunks for well {well_name} (from {original_count})")
+                        else:
+                            logger.warning(f"[RETRIEVE] No general docs found for well {well_name} after filtering, using all {original_count} chunks")
+                    
                     # Add general docs, avoiding duplicates
                     existing_sources = {doc.metadata.get('source', '') for doc in all_docs}
                     for doc in general_docs:
@@ -965,6 +990,9 @@ class RetrieverTool:
             # If still no docs, use default retriever
             if not all_docs:
                 docs = self.retriever.invoke(query)
+                # CRITICAL FIX: Filter default retriever results by well name if specified
+                if well_name and not is_comprehensive_list:
+                    docs = self._filter_docs_by_well(docs, well_name)
                 all_docs = docs
             
             # DOCUMENT-LEVEL RETRIEVAL: Retrieve ALL chunks from relevant documents
@@ -981,6 +1009,15 @@ class RetrieverTool:
                 full_document_chunks = self._retrieve_all_chunks_from_documents(list(relevant_sources))
                 
                 if full_document_chunks:
+                    # CRITICAL FIX: Filter document-level chunks by well name if specified
+                    if well_name and not is_comprehensive_list:
+                        original_count = len(full_document_chunks)
+                        full_document_chunks = self._filter_docs_by_well(full_document_chunks, well_name)
+                        if full_document_chunks:
+                            logger.info(f"[RETRIEVE] Filtered document-level chunks to {len(full_document_chunks)} for well {well_name} (from {original_count})")
+                        else:
+                            logger.warning(f"[RETRIEVE] No document-level chunks found for well {well_name} after filtering")
+                    
                     # Replace initial chunks with full document chunks
                     # This ensures we have complete document context, not just top-k chunks
                     all_docs = full_document_chunks
@@ -1317,6 +1354,15 @@ class RetrieverTool:
                     else:
                         general_docs = self.retriever.invoke(query)
                     
+                    # CRITICAL FIX: Filter general docs by well name if specified
+                    if well_name and not is_comprehensive_list:
+                        original_count = len(general_docs)
+                        general_docs = self._filter_docs_by_well(general_docs, well_name)
+                        if general_docs:
+                            logger.info(f"[RETRIEVE] Filtered general docs to {len(general_docs)} chunks for well {well_name} (from {original_count})")
+                        else:
+                            logger.warning(f"[RETRIEVE] No general docs found for well {well_name} after filtering, using all {original_count} chunks")
+                    
                     # Add general docs, avoiding duplicates
                     existing_sources = {doc.metadata.get('source', '') for doc in all_docs}
                     for doc in general_docs:
@@ -1329,6 +1375,9 @@ class RetrieverTool:
             # If still no docs, use default retriever
             if not all_docs:
                 docs = self.retriever.invoke(query)
+                # CRITICAL FIX: Filter default retriever results by well name if specified
+                if well_name and not is_comprehensive_list:
+                    docs = self._filter_docs_by_well(docs, well_name)
                 all_docs = docs
             
             # DOCUMENT-LEVEL RETRIEVAL: Retrieve ALL chunks from relevant documents
@@ -1345,6 +1394,15 @@ class RetrieverTool:
                 full_document_chunks = self._retrieve_all_chunks_from_documents(list(relevant_sources))
                 
                 if full_document_chunks:
+                    # CRITICAL FIX: Filter document-level chunks by well name if specified
+                    if well_name and not is_comprehensive_list:
+                        original_count = len(full_document_chunks)
+                        full_document_chunks = self._filter_docs_by_well(full_document_chunks, well_name)
+                        if full_document_chunks:
+                            logger.info(f"[RETRIEVE] Filtered document-level chunks to {len(full_document_chunks)} for well {well_name} (from {original_count})")
+                        else:
+                            logger.warning(f"[RETRIEVE] No document-level chunks found for well {well_name} after filtering")
+                    
                     # Replace initial chunks with full document chunks
                     # This ensures we have complete document context, not just top-k chunks
                     all_docs = full_document_chunks
