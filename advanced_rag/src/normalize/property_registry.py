@@ -125,8 +125,8 @@ def default_registry(persist_dir: str = "./data/vectorstore") -> List[PropertyEn
 def _rho_shorthand_key(text: str) -> Optional[str]:
     """
     Deterministically interpret rho-shorthand without requiring synonyms:
-    - "rho ma" / "rho_ma" / "ρma" -> "rhoma"
-    - "rho fl" / "rho_fl" / "ρfl" -> "rhofl"
+    - "rho ma" / "rho_ma" / "ρma" / "pma" -> "rhoma"
+    - "rho fl" / "rho_fl" / "ρfl" / "pfl" -> "rhofl"
     """
     t = canonical_tokenize(text)
     if not t:
@@ -135,6 +135,12 @@ def _rho_shorthand_key(text: str) -> Optional[str]:
     if "rhoma" in t:
         return "rhoma"
     if "rhofl" in t:
+        return "rhofl"
+    # Common shorthand: "pma" (without "rho") -> "rhoma"
+    if t == "pma" or (t.endswith("pma") and len(t) <= 5):
+        return "rhoma"
+    # Common shorthand: "pfl" (without "rho") -> "rhofl"
+    if t == "pfl" or (t.endswith("pfl") and len(t) <= 5):
         return "rhofl"
     # split forms: rho + ma/fl
     if "rho" in t and "ma" in t:
@@ -278,10 +284,12 @@ def resolve_property_deterministic(question: str, registry: Sequence[PropertyEnt
                 add_surface("matrix density", e)
                 add_surface("rho ma", e)
                 add_surface("ρma", e)
+                add_surface("pma", e)  # Common shorthand
             if e.canonical == "fluid_density":
                 add_surface("fluid density", e)
                 add_surface("rho fl", e)
                 add_surface("ρfl", e)
+                add_surface("pfl", e)  # Common shorthand
             if e.canonical == "netgros":
                 add_surface("net to gross", e)
             if e.canonical == "temperature_gradient":

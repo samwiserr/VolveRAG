@@ -1485,6 +1485,7 @@ def generate_answer(state: MessagesState):
                     "rhoma": "Rhoma",
                     "ρma": "Rhoma",
                     "rho ma": "Rhoma",
+                    "pma": "Rhoma",  # Common shorthand
                     "fluid density": "Rhofl",
                     "rhofl": "Rhofl",
                     "ρfl": "Rhofl",

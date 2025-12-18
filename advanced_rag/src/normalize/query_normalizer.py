@@ -218,6 +218,7 @@ def _property_synonyms() -> Dict[str, str]:
         "density of matrix": "matrix_density",
         "rhoma": "matrix_density",
         "ρma": "matrix_density",
+        "pma": "matrix_density",  # Common shorthand
         "fluid density": "fluid_density",
         "density of fluid": "fluid_density",
         "density fluid": "fluid_density",
