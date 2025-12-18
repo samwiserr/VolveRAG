@@ -211,22 +211,26 @@ class PetroParamsTool:
         - full table (well only)
         """
         logger.info(f"[PETRO_PARAMS] lookup() called with query: '{query}'")
-        well = _extract_well(query)
-        logger.info(f"[PETRO_PARAMS] Extracted well: '{well}'")
-        if not well:
-            logger.warning(f"[PETRO_PARAMS] No well detected in query: '{query}'")
-            return "[PETRO_PARAMS_JSON] " + json.dumps(
-                {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-12."},
-                ensure_ascii=False,
-            )
+        try:
+            well = _extract_well(query)
+            logger.info(f"[PETRO_PARAMS] Extracted well: '{well}'")
+            if not well:
+                logger.warning(f"[PETRO_PARAMS] No well detected in query: '{query}'")
+                return "[PETRO_PARAMS_JSON] " + json.dumps(
+                    {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-12."},
+                    ensure_ascii=False,
+                )
 
-        # Multi-strategy well matching (same approach as FormationPropertiesTool)
-        logger.info(f"[PETRO_PARAMS] Starting well matching for '{well}'")
-        logger.info(f"[PETRO_PARAMS] Cache has {len(self._by_well)} well keys: {sorted(list(self._by_well.keys()))[:5]}")
-        nwell = _norm_well(well)
-        logger.info(f"[PETRO_PARAMS] Normalized well: '{nwell}'")
-        rows = self._by_well.get(nwell, [])
-        logger.info(f"[PETRO_PARAMS] Initial lookup result: rows={len(rows) if rows else 0}, key='{nwell}'")
+            # Multi-strategy well matching (same approach as FormationPropertiesTool)
+            logger.info(f"[PETRO_PARAMS] Starting well matching for '{well}'")
+            logger.info(f"[PETRO_PARAMS] Cache has {len(self._by_well)} well keys: {sorted(list(self._by_well.keys()))[:10]}")
+            nwell = _norm_well(well)
+            logger.info(f"[PETRO_PARAMS] Normalized well: '{nwell}'")
+            rows = self._by_well.get(nwell, [])
+            logger.info(f"[PETRO_PARAMS] Initial lookup result: rows={len(rows) if rows else 0}, key='{nwell}'")
+        except Exception as e:
+            logger.error(f"[PETRO_PARAMS] Exception in initial matching: {e}", exc_info=True)
+            raise
 
         if not rows:
             # Try normalizing like well picks (remove NO/WELL etc)
