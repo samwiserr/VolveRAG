@@ -242,8 +242,9 @@ class PetroParamsTool:
         
         # Try matching with suffixes stripped from cache keys
         # Well names in cache may have suffixes like "PETROPHYSICAL", "DATO", "FORMATION"
-        logger.info(f"[PETRO_PARAMS] Before suffix stripping: rows={len(rows) if rows else 0}, nwell='{nwell}'")
+        logger.info(f"[PETRO_PARAMS] Before suffix stripping check: rows={len(rows) if rows else 0}, nwell='{nwell}', will_check={not rows}")
         if not rows:
+            logger.info(f"[PETRO_PARAMS] Entering suffix stripping block - rows is empty")
             common_suffixes = ["PETROPHYSICAL", "DATO", "FORMATION", "REPORT"]
             query_base = nwell
             logger.info(f"[PETRO_PARAMS] Trying suffix-stripped matching for '{well}' (norm: '{nwell}', base: '{query_base}')")
