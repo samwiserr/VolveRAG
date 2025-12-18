@@ -190,7 +190,7 @@ def resolve_with_bounded_agent(
 
     # Deterministic parse first
     well = extract_well(q)
-    formation = normalize_formation(q)
+    formation = normalize_formation(q, persist_dir=persist_dir)
     prop_entry, prop_candidates = resolve_property_deterministic(q, props)
 
     prop = prop_entry.canonical if prop_entry else None
