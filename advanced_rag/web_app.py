@@ -420,7 +420,7 @@ def _pdf_full_viewer(file_path: str, initial_page: Optional[int] = None) -> str:
                     <button onclick="downloadPDF()" style="padding: 0.4rem 0.8rem; background-color: #28a745; color: white; border: none; border-radius: 0.25rem; cursor: pointer;">⬇️ Download PDF</button>
                 </div>
             </div>
-            <div id="pdf-viewer-{unique_id}" style="padding: 10px; overflow-y: auto; max-height: 800px; text-align: center;"></div>
+            <div id="pdf-viewer-{unique_id}" style="padding: 10px; overflow-y: auto; max-height: 800px; text-align: center; width: 100%;"></div>
             <div id="pdf-loading-{unique_id}" style="text-align: center; padding: 20px;">Loading PDF...</div>
         </div>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
