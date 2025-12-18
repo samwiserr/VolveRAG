@@ -1706,6 +1706,183 @@ def generate_answer(state: MessagesState):
             lines.append(source_line())
             return {"messages": [AIMessage(content="\n".join(lines))]}
 
+    # Special deterministic formatting: Evaluation parameters JSON payload -> cell/row/column/full table
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and isinstance(msg.content, str) and msg.content.startswith("[EVAL_PARAMS_JSON]"):
+            import json
+            import re
+
+            raw = msg.content[len("[EVAL_PARAMS_JSON]") :].strip()
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                # If parsing fails, continue to LLM answer generation
+                break
+
+            if isinstance(payload, dict) and payload.get("error"):
+                # Error handling - let retriever fallback handle it (already implemented above)
+                break
+
+            well = payload.get("well") or ""
+            formations = payload.get("formations") or []
+            params = payload.get("params") or {}  # param -> formation -> value (e.g., {"Rhoma": {"Hugin": "2.65"}})
+            notes = payload.get("notes") or []
+            source = payload.get("source") or ""
+            page_start = payload.get("page_start")
+            page_end = payload.get("page_end")
+            ql = question.lower() if isinstance(question, str) else ""
+
+            def detect_formation_eval() -> Optional[str]:
+                """Detect formation from query for eval params."""
+                if not isinstance(formations, list) or not formations:
+                    return None
+                ql_normalized = ql.replace("fm.", "").replace("fm", "").replace("formation", "").replace("formations", "")
+                # Exact match first
+                for f in formations:
+                    if isinstance(f, str) and f.lower() in ql_normalized:
+                        return f
+                # Fuzzy match
+                try:
+                    from rapidfuzz import fuzz, process
+                    formation_lower_map = {f.lower(): f for f in formations if isinstance(f, str) and f.strip()}
+                    if formation_lower_map:
+                        hits = process.extract(ql_normalized, list(formation_lower_map.keys()), scorer=fuzz.partial_ratio, limit=3)
+                        if hits:
+                            best_match, score, _ = hits[0]
+                            if score >= 80.0:
+                                return formation_lower_map[best_match]
+                except Exception:
+                    pass
+                return None
+
+            def detect_param_eval() -> Optional[str]:
+                """Detect evaluation parameter from query."""
+                # Map query terms to eval param names (as stored in cache)
+                syn = {
+                    "matrix density": "Rhoma",
+                    "rhoma": "Rhoma",
+                    "ρma": "Rhoma",
+                    "rho ma": "Rhoma",
+                    "fluid density": "Rhofl",
+                    "rhofl": "Rhofl",
+                    "ρfl": "Rhofl",
+                    "rho fl": "Rhofl",
+                    "grmax": "GRmax",
+                    "gr max": "GRmax",
+                    "gamma ray max": "GRmax",
+                    "grmin": "GRmin",
+                    "gr min": "GRmin",
+                    "gamma ray min": "GRmin",
+                    "archie a": "a",
+                    "tortuosity factor": "a",
+                    "archie m": "m",
+                    "cementation exponent": "m",
+                    "archie n": "n",
+                    "saturation exponent": "n",
+                }
+                for needle, p in syn.items():
+                    if needle in ql:
+                        return p
+                return None
+
+            def source_line_eval() -> str:
+                pages = ""
+                if isinstance(page_start, int) and isinstance(page_end, int):
+                    pages = f" (pages {page_start}-{page_end})" if page_start != page_end else f" (page {page_start})"
+                return f"Source: {source}{pages}".strip()
+
+            f = detect_formation_eval()
+            p = detect_param_eval()
+
+            # Cell: parameter + formation
+            if f and p and isinstance(params, dict):
+                param_data = params.get(p)
+                if isinstance(param_data, dict):
+                    value = param_data.get(f)
+                    if value:
+                        out = [
+                            f"{p} for {f} formation in well {well}: {value}",
+                            "",
+                            source_line_eval(),
+                        ]
+                        if notes:
+                            out.insert(-1, f"Notes: {'; '.join(notes[:3])}")
+                        return {"messages": [AIMessage(content="\n".join(out))]}
+                    else:
+                        # Formation found but no value for this parameter
+                        available_formations = [ff for ff in formations 
+                                               if isinstance(ff, str) and param_data.get(ff)]
+                        if available_formations:
+                            available_list = ", ".join([f"{ff} ({param_data.get(ff)})" for ff in available_formations])
+                            out = [
+                                f"{p} for {f} formation in well {well}: N/A",
+                                "",
+                                f"Note: {f} formation does not have a {p} value in the evaluation parameters table.",
+                                f"Available formations with {p} values: {available_list}.",
+                                "",
+                                source_line_eval(),
+                            ]
+                        else:
+                            out = [
+                                f"{p} for {f} formation in well {well}: N/A",
+                                "",
+                                f"Note: {f} formation does not have a {p} value in the evaluation parameters table for this well.",
+                                "",
+                                source_line_eval(),
+                            ]
+                        return {"messages": [AIMessage(content="\n".join(out))]}
+
+            # Row: parameter only (across formations)
+            if p and not f and isinstance(params, dict):
+                param_data = params.get(p)
+                if isinstance(param_data, dict):
+                    title = f"{p} — Well {well}"
+                    lines = [title, "", "| Formation | Value |", "|---|---:|"]
+                    for ff in formations:
+                        if isinstance(ff, str):
+                            val = param_data.get(ff, "N/A")
+                            lines.append(f"| {ff} | {val} |")
+                    lines.append("")
+                    lines.append(source_line_eval())
+                    if notes:
+                        lines.insert(-1, f"Notes: {'; '.join(notes[:3])}")
+                    return {"messages": [AIMessage(content="\n".join(lines))]}
+
+            # Column: formation only (all parameters for that formation)
+            if f and not p and isinstance(params, dict):
+                lines = [f"Evaluation parameters — Well {well} — {f}", "", "| Parameter | Value |", "|---|---:|"]
+                for param_name, param_data in params.items():
+                    if isinstance(param_data, dict):
+                        val = param_data.get(f, "N/A")
+                        lines.append(f"| {param_name} | {val} |")
+                lines.append("")
+                lines.append(source_line_eval())
+                if notes:
+                    lines.insert(-1, f"Notes: {'; '.join(notes[:3])}")
+                return {"messages": [AIMessage(content="\n".join(lines))]}
+
+            # Full table (well only / ambiguous)
+            if isinstance(params, dict) and isinstance(formations, list):
+                # Build a table with all parameters and formations
+                param_names = sorted([k for k in params.keys() if isinstance(params.get(k), dict)])
+                if param_names and formations:
+                    lines = [f"Evaluation parameters — Well {well}", ""]
+                    # Header: Formation names
+                    header = "| Parameter | " + " | ".join([str(f) for f in formations]) + " |"
+                    lines.append(header)
+                    lines.append("|" + "---|" * (len(formations) + 1))
+                    # Rows: one per parameter
+                    for param_name in param_names:
+                        param_data = params.get(param_name)
+                        if isinstance(param_data, dict):
+                            row = "| " + param_name + " | " + " | ".join([str(param_data.get(f, "N/A")) for f in formations]) + " |"
+                            lines.append(row)
+                    lines.append("")
+                    lines.append(source_line_eval())
+                    if notes:
+                        lines.insert(-1, f"Notes: {'; '.join(notes[:3])}")
+                    return {"messages": [AIMessage(content="\n".join(lines))]}
+
     # Special deterministic formatting: Structured facts JSON payload -> single value or list (no interpretation)
     for msg in messages:
         if isinstance(msg, ToolMessage) and isinstance(msg.content, str) and msg.content.startswith("[FACTS_JSON]"):
