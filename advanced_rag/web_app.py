@@ -1119,18 +1119,43 @@ def main():
                     st.caption(f"Cited page preview (page {vpage})")
                     st.image(png, width='stretch')
                     
-                    # Add button to open full PDF in new tab
+                    # Add button to open full PDF in new tab using blob URL
                     pdf_data_uri = _get_pdf_data_uri(vp)
                     if pdf_data_uri:
-                        # Create a button that opens PDF in new tab using HTML
+                        # Use JavaScript blob URL to open PDF in new tab (Chrome allows this)
                         import streamlit.components.v1 as components
                         clean_path = _clean_source_path(vp)
+                        # Escape the base64 string for JavaScript
+                        b64 = pdf_data_uri.split(',')[1]  # Extract base64 part
+                        b64_escaped = b64.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+                        
                         components.html(
                             f"""
-                            <a href="{pdf_data_uri}" target="_blank" 
-                               style="display: inline-block; padding: 0.5rem 1rem; background-color: #1f77b4; color: white; text-decoration: none; border-radius: 0.25rem; margin-top: 0.5rem; font-weight: 500;">
+                            <button onclick="(function() {{
+                                const base64 = '{b64_escaped}';
+                                try {{
+                                    const binaryString = atob(base64);
+                                    const bytes = new Uint8Array(binaryString.length);
+                                    for (let i = 0; i < binaryString.length; i++) {{
+                                        bytes[i] = binaryString.charCodeAt(i);
+                                    }}
+                                    const blob = new Blob([bytes], {{ type: 'application/pdf' }});
+                                    const url = URL.createObjectURL(blob);
+                                    const newWindow = window.open(url, '_blank');
+                                    if (newWindow) {{
+                                        // Clean up blob URL after a delay (optional)
+                                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                                    }} else {{
+                                        alert('Please allow pop-ups to view the PDF');
+                                    }}
+                                }} catch (error) {{
+                                    console.error('Failed to open PDF:', error);
+                                    alert('Failed to open PDF. Please try downloading it instead.');
+                                }}
+                            }})()" 
+                            style="padding: 0.5rem 1rem; background-color: #1f77b4; color: white; border: none; border-radius: 0.25rem; margin-top: 0.5rem; font-weight: 500; cursor: pointer; font-size: 0.9rem;">
                                 📄 Open full PDF in new tab
-                            </a>
+                            </button>
                             """,
                             height=50
                         )
