@@ -516,7 +516,10 @@ def generate_query_or_respond(state: MessagesState, tools):
 
         # Deterministic routing: "Evaluation parameters" tables (Rhoma/Rhofl/GRmin/GRmax/Archie a,n,m, etc.)
         # Users often ask for these values without saying "evaluation parameters", so we key off parameter terms too.
-        has_well_159 = ("15" in ql and "9" in ql)
+        # Use same well detection logic as petro params routing (not just "15" and "9")
+        extracted_well_eval = extract_well(question)
+        has_well_pattern_eval = ("15" in ql and "9" in ql) or extracted_well_eval is not None or nq.well is not None
+        
         eval_params_terms = [
             "evaluation parameter",
             "evaluation parameters",
@@ -535,8 +538,9 @@ def generate_query_or_respond(state: MessagesState, tools):
             "ρma",
             "ρfl",
         ]
-        is_eval_params = has_well_159 and any(t in ql for t in eval_params_terms)
+        is_eval_params = has_well_pattern_eval and any(t in ql for t in eval_params_terms)
         if is_eval_params:
+            logger.info(f"[ROUTING] ✅ Detected eval params query - routing to lookup_evaluation_parameters. Query: '{question[:100] if isinstance(question, str) else question}', well_pattern={has_well_pattern_eval}, extracted_well='{extracted_well_eval}'")
             forced = AIMessage(
                 content="",
                 tool_calls=[
