@@ -818,6 +818,30 @@ def generate_answer(state: MessagesState):
                 has_well_picks_formations_in_messages = True
                 break
     
+    # Check if eval params tool returned an error but we have retriever context
+    eval_params_error_with_retriever = False
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and isinstance(msg.content, str):
+            if msg.content.startswith("[EVAL_PARAMS_JSON]"):
+                try:
+                    import json
+                    raw = msg.content[len("[EVAL_PARAMS_JSON]"):].strip()
+                    payload = json.loads(raw)
+                    if isinstance(payload, dict) and payload.get("error") == "no_table_for_well":
+                        # Check if we have retriever context
+                        has_retriever = any(
+                            isinstance(m, ToolMessage) and 
+                            isinstance(m.content, str) and 
+                            (hasattr(m, 'name') and "retrieve" in str(m.name).lower() or len(m.content) > 500)
+                            for m in messages
+                        )
+                        if has_retriever:
+                            eval_params_error_with_retriever = True
+                            logger.info(f"[ANSWER] Eval params error detected with retriever context - will exclude error message from context")
+                            break
+                except Exception:
+                    pass
+    
     context_parts = []
     for msg in messages:
         # Extract tool message content
@@ -827,6 +851,18 @@ def generate_answer(state: MessagesState):
                 if isinstance(msg.content, str) and ("Evaluation Parameters" in msg.content or "A — Well" in msg.content):
                     logger.info(f"[ANSWER] Skipping evaluation parameters context to prevent parameter extraction")
                     continue
+            # If eval params returned error but we have retriever context, exclude the error message
+            if eval_params_error_with_retriever:
+                if isinstance(msg.content, str) and msg.content.startswith("[EVAL_PARAMS_JSON]"):
+                    try:
+                        import json
+                        raw = msg.content[len("[EVAL_PARAMS_JSON]"):].strip()
+                        payload = json.loads(raw)
+                        if isinstance(payload, dict) and payload.get("error") == "no_table_for_well":
+                            logger.info(f"[ANSWER] Excluding eval params error message from context - using retriever context only")
+                            continue
+                    except Exception:
+                        pass
             context_parts.append(msg.content)
         elif hasattr(msg, 'content') and msg.content:
             # Check if it's a tool message by content length and structure
