@@ -991,16 +991,24 @@ def _get_graph(persist_dir: str, embedding_model: str, cache_version: int = 2):
 
     # Start with retrieval tool; add WellPicksTool only if data/cache is available
     tools = [retrieve_tool]
+    
+    # Resolve well_picks_cache_path - it's in the data directory, not vectorstore
+    # Try multiple locations: data/well_picks_cache.json relative to persist_dir, or data/well_picks_cache.json relative to web_app.py
+    data_dir = Path(persist_dir).parent  # Go up from vectorstore to data directory
+    well_picks_cache_path = data_dir / "well_picks_cache.json"
+    if not well_picks_cache_path.exists():
+        # Fallback: try relative to web_app.py location
+        well_picks_cache_path = Path(__file__).resolve().parent / "data" / "well_picks_cache.json"
+    
     try:
-        cache_path = Path(persist_dir) / "well_picks_cache.json"
-        well_picks_tool = WellPicksTool(dat_path=dat_path, cache_path=str(cache_path))
+        well_picks_tool = WellPicksTool(dat_path=dat_path, cache_path=str(well_picks_cache_path))
         if getattr(well_picks_tool, "_rows", None):
             tools.insert(0, well_picks_tool.get_tool())
     except Exception as e:
         logger = __import__('logging').getLogger(__name__)
         logger.warning(f"[WEB_APP] WellPicksTool not available: {e}. Continuing without it.")
 
-    # Optional caches (if present they’ll be used for deterministic lookup + citations)
+    # Optional caches (if present they'll be used for deterministic lookup + citations)
     section_index = Path(persist_dir) / "section_index.json"
     if section_index.exists():
         tools.append(SectionLookupTool(str(section_index)).get_tool())
@@ -1011,13 +1019,12 @@ def _get_graph(persist_dir: str, embedding_model: str, cache_version: int = 2):
 
         # One-shot formations + properties tool
         try:
-            # Resolve well_picks_cache_path to absolute
-            well_picks_cache = Path(__file__).resolve().parent / "data" / "well_picks_cache.json"
+            # Use the same well_picks_cache_path that was used for WellPicksTool
             tools.append(
                 FormationPropertiesTool(
                     well_picks_dat_path=dat_path,
                     petro_params_cache_path=str(petro_cache),
-                    well_picks_cache_path=str(well_picks_cache),  # Pass absolute path
+                    well_picks_cache_path=str(well_picks_cache_path),  # Use same path as WellPicksTool
                 ).get_tool()
             )
         except Exception:
