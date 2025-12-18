@@ -1459,6 +1459,7 @@ def generate_answer(state: MessagesState):
 
             def detect_param() -> Optional[str]:
                 # Supports both canonical and common synonyms
+                # Petro params (from petro_params_cache)
                 syn = {
                     "netgros": "netgros",
                     "net to gross": "netgros",
@@ -1479,6 +1480,27 @@ def generate_answer(state: MessagesState):
                     "arithmetic": "klogh_a",
                     "harmonic": "klogh_h",
                     "geometric": "klogh_g",
+                    # Eval params (from eval_params_cache)
+                    "matrix density": "Rhoma",
+                    "rhoma": "Rhoma",
+                    "ρma": "Rhoma",
+                    "rho ma": "Rhoma",
+                    "fluid density": "Rhofl",
+                    "rhofl": "Rhofl",
+                    "ρfl": "Rhofl",
+                    "rho fl": "Rhofl",
+                    "grmax": "GRmax",
+                    "gr max": "GRmax",
+                    "gamma ray max": "GRmax",
+                    "grmin": "GRmin",
+                    "gr min": "GRmin",
+                    "gamma ray min": "GRmin",
+                    "archie a": "a",
+                    "tortuosity factor": "a",
+                    "archie m": "m",
+                    "cementation exponent": "m",
+                    "archie n": "n",
+                    "saturation exponent": "n",
                 }
                 # Special handling: "klogh harmonic" etc
                 if "klogh" in ql and "harmonic" in ql:
