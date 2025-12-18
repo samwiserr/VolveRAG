@@ -262,6 +262,7 @@ class PetroParamsTool:
             
             # Second pass: only if no exact match, try very strict substring matching
             # Only match if one is a clear prefix/suffix of the other (e.g., "159F5" vs "159F5A")
+            # CRITICAL: Must match the full well number, not just prefix (e.g., "159F5" vs "159F15A")
             if not rows:
                 for stored_norm, stored_rows in self._by_well.items():
                     if not stored_rows:
@@ -269,16 +270,29 @@ class PetroParamsTool:
                     # Only match if one well is clearly a variant of the other
                     # e.g., "159F5" should match "159F5A" but NOT "159F15D"
                     if query_norm_clean and stored_norm:
-                        # Check if one starts with the other (with at least 4 chars overlap)
-                        if len(query_norm_clean) >= 4 and len(stored_norm) >= 4:
-                            if (stored_norm.startswith(query_norm_clean[:4]) and 
-                                abs(len(query_norm_clean) - len(stored_norm)) <= 2):
-                                logger.info(f"[PETRO_PARAMS] Found prefix match: '{well}' -> '{stored_norm}'")
-                                rows = stored_rows
-                                break
-                            if (query_norm_clean.startswith(stored_norm[:4]) and 
-                                abs(len(query_norm_clean) - len(stored_norm)) <= 2):
-                                logger.info(f"[PETRO_PARAMS] Found prefix match: '{well}' -> '{stored_norm}'")
+                        # Extract the well number part (everything before the last letter/suffix)
+                        # For "159F5", well_num = "159F5"
+                        # For "159F15A", well_num = "159F15"
+                        # For "159F5A", well_num = "159F5"
+                        def extract_well_number(norm_str):
+                            # Remove trailing letters to get the numeric part
+                            # e.g., "159F5A" -> "159F5", "159F15A" -> "159F15"
+                            import re
+                            # Match pattern: digits, then optional letter, then digits, then optional letters
+                            match = re.match(r'^(\d+[A-Z]?\d+)([A-Z]*)$', norm_str)
+                            if match:
+                                return match.group(1)  # Return the numeric part
+                            return norm_str
+                        
+                        query_well_num = extract_well_number(query_norm_clean)
+                        stored_well_num = extract_well_number(stored_norm)
+                        
+                        # Only match if well numbers are the same (allowing suffix differences)
+                        # e.g., "159F5" matches "159F5A" but "159F5" does NOT match "159F15A"
+                        if query_well_num == stored_well_num:
+                            # Check length difference is small (only suffix difference)
+                            if abs(len(query_norm_clean) - len(stored_norm)) <= 2:
+                                logger.info(f"[PETRO_PARAMS] Found well number match: '{well}' (norm: '{query_norm_clean}', well_num: '{query_well_num}') -> '{stored_norm}' (well_num: '{stored_well_num}')")
                                 rows = stored_rows
                                 break
 
