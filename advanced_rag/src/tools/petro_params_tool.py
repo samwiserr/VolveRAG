@@ -275,26 +275,37 @@ class PetroParamsTool:
                         # For "159F15A", well_num = "159F15"
                         # For "159F5A", well_num = "159F5"
                         def extract_well_number(norm_str):
-                            # Remove trailing letters to get the numeric part
-                            # e.g., "159F5A" -> "159F5", "159F15A" -> "159F15"
+                            # Extract the well number part before any suffix letters
+                            # Pattern: digits, optional letter (F), digits, then optional suffix letters
+                            # e.g., "159F5" -> "159F5", "159F5A" -> "159F5", "159F15A" -> "159F15"
                             import re
-                            # Match pattern: digits, then optional letter, then digits, then optional letters
+                            # Match: start with digits, optional F, more digits, then optional letters at end
+                            # Group 1 captures the numeric part (before suffix)
                             match = re.match(r'^(\d+[A-Z]?\d+)([A-Z]*)$', norm_str)
                             if match:
-                                return match.group(1)  # Return the numeric part
-                            return norm_str
+                                well_num = match.group(1)
+                                logger.debug(f"[PETRO_PARAMS] extract_well_number: '{norm_str}' -> '{well_num}'")
+                                return well_num
+                            # Fallback: remove trailing letters
+                            well_num = re.sub(r'[A-Z]+$', '', norm_str)
+                            logger.debug(f"[PETRO_PARAMS] extract_well_number (fallback): '{norm_str}' -> '{well_num}'")
+                            return well_num
                         
                         query_well_num = extract_well_number(query_norm_clean)
                         stored_well_num = extract_well_number(stored_norm)
+                        
+                        logger.debug(f"[PETRO_PARAMS] Comparing well numbers: query='{query_well_num}' vs stored='{stored_well_num}'")
                         
                         # Only match if well numbers are the same (allowing suffix differences)
                         # e.g., "159F5" matches "159F5A" but "159F5" does NOT match "159F15A"
                         if query_well_num == stored_well_num:
                             # Check length difference is small (only suffix difference)
                             if abs(len(query_norm_clean) - len(stored_norm)) <= 2:
-                                logger.info(f"[PETRO_PARAMS] Found well number match: '{well}' (norm: '{query_norm_clean}', well_num: '{query_well_num}') -> '{stored_norm}' (well_num: '{stored_well_num}')")
+                                logger.info(f"[PETRO_PARAMS] ✅ Found well number match: '{well}' (norm: '{query_norm_clean}', well_num: '{query_well_num}') -> '{stored_norm}' (well_num: '{stored_well_num}')")
                                 rows = stored_rows
                                 break
+                        else:
+                            logger.debug(f"[PETRO_PARAMS] ❌ Well numbers don't match: '{query_well_num}' != '{stored_well_num}'")
 
         if not rows:
             # Log available wells for debugging (sample)
