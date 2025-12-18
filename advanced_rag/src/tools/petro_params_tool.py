@@ -238,9 +238,11 @@ class PetroParamsTool:
             cleaned = well.upper().replace("WELL", "").replace("NO", "").strip()
             nw3 = _norm_well(cleaned)
             rows = self._by_well.get(nw3, [])
+            logger.info(f"[PETRO_PARAMS] After cleaned attempt: rows={len(rows) if rows else 0}, nw3='{nw3}'")
         
         # Try matching with suffixes stripped from cache keys
         # Well names in cache may have suffixes like "PETROPHYSICAL", "DATO", "FORMATION"
+        logger.info(f"[PETRO_PARAMS] Before suffix stripping: rows={len(rows) if rows else 0}, nwell='{nwell}'")
         if not rows:
             common_suffixes = ["PETROPHYSICAL", "DATO", "FORMATION", "REPORT"]
             query_base = nwell
