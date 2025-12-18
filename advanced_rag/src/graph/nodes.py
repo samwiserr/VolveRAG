@@ -1082,6 +1082,35 @@ def generate_answer(state: MessagesState):
                 if not isinstance(params, dict):
                     return None
 
+                # Map common query terms to parameter keys (check this FIRST before direct key matching)
+                param_synonyms = {
+                    "matrix density": "Rhoma",
+                    "rhoma": "Rhoma",
+                    "ρma": "Rhoma",
+                    "rho ma": "Rhoma",
+                    "pma": "Rhoma",  # Common shorthand
+                    "fluid density": "Rhofl",
+                    "rhofl": "Rhofl",
+                    "ρfl": "Rhofl",
+                    "rho fl": "Rhofl",
+                    "pfl": "Rhofl",  # Common shorthand
+                    "grmax": "GRmax",
+                    "gr max": "GRmax",
+                    "gamma ray max": "GRmax",
+                    "grmin": "GRmin",
+                    "gr min": "GRmin",
+                    "gamma ray min": "GRmin",
+                    "archie a": "a",
+                    "tortuosity factor": "a",
+                    "archie m": "m",
+                    "cementation exponent": "m",
+                    "archie n": "n",
+                    "saturation exponent": "n",
+                }
+                for term, param_key in param_synonyms.items():
+                    if term in ql and param_key in params:
+                        return param_key
+
                 # Direct key mention (e.g., "Grmax", "Rhoma")
                 for k in params.keys():
                     if not isinstance(k, str):
