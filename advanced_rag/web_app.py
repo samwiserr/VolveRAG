@@ -377,6 +377,30 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
     return None
 
 
+def _get_pdf_data_uri(file_path: str) -> Optional[str]:
+    """
+    Get a data URI for the PDF file that can be opened in a new tab.
+    
+    Args:
+        file_path: Original file path
+        
+    Returns:
+        Data URI string if PDF found, None otherwise
+    """
+    pdfs_dir = Path(__file__).resolve().parent / "data" / "pdfs"
+    p = _find_pdf_file(file_path, pdfs_dir)
+    
+    if p is None or not p.exists():
+        return None
+    
+    try:
+        b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
+        return f"data:application/pdf;base64,{b64}"
+    except Exception as e:
+        logger.error(f"Failed to create PDF data URI for {p}: {e}")
+        return None
+
+
 def _pdf_iframe(file_path: str, page: Optional[int]) -> str:
     """
     Display PDF in object tag, handling both local and downloaded paths.
