@@ -1845,6 +1845,10 @@ def generate_answer(state: MessagesState):
         prompt = GENERATE_PROMPT.format(question=question, context=context[:context_limit])
         if is_well_picks_context:
             prompt += "\n\nIMPORTANT: The context provided is from the Well_picks_Volve_v1 document. You MUST ONLY use information from this document. Do not use information from other sources or make assumptions. If the answer is not in the well picks document, state that clearly."
+        
+        # If we're using retriever fallback for eval params, add explicit instructions
+        if eval_params_error_with_retriever:
+            prompt += "\n\nCRITICAL: The structured evaluation parameters lookup did not find data for this well, but document context is available. You MUST carefully search the document context for the requested information (e.g., matrix density, fluid density, Rhoma, Rhofl, GRmax, GRmin, Archie parameters). Look for tables, evaluation parameters sections, or any mention of these values in the context. If you find the information, extract it precisely. If the information is truly not in the context, state that clearly. Do NOT say the information is unavailable just because the structured lookup failed - the document context may contain it."
     
     response = _get_response_model().invoke([{"role": "user", "content": prompt}])
     
