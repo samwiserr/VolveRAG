@@ -318,6 +318,11 @@ class RetrieverTool:
         if expanded_terms:
             # Add a query that includes expansions (keeps original wording too)
             queries.append(q + " " + " ".join(expanded_terms))
+        if eval_param_expansions:
+            # Add queries with evaluation parameter synonyms
+            for expansion in eval_param_expansions[:3]:  # Limit to avoid too many queries
+                if expansion not in ql:
+                    queries.append(q + " " + expansion)
         for v in well_variants[:6]:
             # avoid blowing up query count
             if v and v not in q:
