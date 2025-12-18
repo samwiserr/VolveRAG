@@ -207,8 +207,10 @@ def generate_query_or_respond(state: MessagesState, tools):
     # Deterministic routing: for "complete list ... formations ... each/all wells" queries,
     # force the structured well-picks tool to run (no embeddings / no LLM summarization).
     try:
+        logger.info(f"[ROUTING] Entering routing logic. State messages: {len(state.get('messages', []))}")
         question = _latest_user_question(state.get("messages"))
         ql = question.lower() if isinstance(question, str) else ""
+        logger.info(f"[ROUTING] Initial question: '{question[:100] if isinstance(question, str) else question}', ql: '{ql[:100]}'")
         
         # Store original question for "all wells" detection (before any modifications)
         original_question = question if isinstance(question, str) else ""
