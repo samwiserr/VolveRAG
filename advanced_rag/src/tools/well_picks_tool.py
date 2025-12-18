@@ -161,17 +161,22 @@ class WellPicksTool:
 
     def _load_or_parse(self) -> None:
         # If the .dat file is missing, try loading from cache directly.
+        logger.info(f"[WELL_PICKS] _load_or_parse: dat_path={self.dat_path}, exists={self.dat_path.exists()}, cache_path={self.cache_path}, exists={self.cache_path.exists()}")
         if not self.dat_path.exists():
             if self.cache_path.exists():
                 try:
+                    logger.info(f"[WELL_PICKS] Loading from cache: {self.cache_path}")
                     payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
                     if isinstance(payload.get("rows"), list):
                         self._rows = [WellPickRow(**r) for r in payload["rows"]]
                         self._rebuild_index()
                         logger.info(f"[OK] Loaded well picks cache with {len(self._rows)} rows (dat missing)")
+                        logger.info(f"[WELL_PICKS] Rebuilt index: _by_well has {len(self._by_well)} entries")
                         return
                 except Exception as e:
-                    logger.warning(f"[WELL_PICKS] Cache load failed while dat missing: {e}")
+                    logger.warning(f"[WELL_PICKS] Cache load failed while dat missing: {e}", exc_info=True)
+            else:
+                logger.warning(f"[WELL_PICKS] Cache path does not exist: {self.cache_path}")
             raise FileNotFoundError(f"Well picks .dat not found and no cache available: {self.dat_path}")
 
         md5 = _file_md5(self.dat_path)
