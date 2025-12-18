@@ -828,6 +828,11 @@ def main():
                 except Exception:
                     pass
             
+            # Auto-fix: Update old repository name (VolveRAG) to new name (volverag)
+            if pdfs_url and "VolveRAG" in pdfs_url:
+                pdfs_url = pdfs_url.replace("VolveRAG", "volverag")
+                logger.info(f"Auto-corrected repository name in PDFS_URL: {pdfs_url}")
+            
             if pdfs_url:
                 with st.sidebar:
                     with st.spinner("Downloading PDFs... This may take a few minutes."):
