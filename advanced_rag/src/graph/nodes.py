@@ -288,7 +288,14 @@ def generate_query_or_respond(state: MessagesState, tools):
             # Only do entity resolution if it's NOT a param query (param queries should route directly)
             if looks_facty and (nq.well is None or nq.property is None or nq.formation is None) and not is_likely_param_query:
                 try:
-                    er = resolve_with_bounded_agent(question, persist_dir="./data/vectorstore")
+                    # Enhance question with inferred context before passing to entity resolver
+                    # This ensures follow-up queries like "matrix density" include well/formation from previous messages
+                    enhanced_question = question
+                    if nq.well and extract_well(question) is None:
+                        enhanced_question = f"{question} in well {nq.well}"
+                    if nq.formation and nq.formation.lower() not in question.lower():
+                        enhanced_question = f"{enhanced_question} formation {nq.formation}"
+                    er = resolve_with_bounded_agent(enhanced_question, persist_dir="./data/vectorstore")
                     if er.needs_clarification and er.clarification_question:
                         return {"messages": [AIMessage(content=er.clarification_question)]}
                     # CRITICAL: If still no well after resolution, ask for clarification
