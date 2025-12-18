@@ -252,6 +252,8 @@ def generate_query_or_respond(state: MessagesState, tools):
         ql = question.lower() if isinstance(question, str) else ""
 
         # Normalize -> Resolve (deterministic, runs before any retrieval)
+        # CRITICAL: Normalize the REWRITTEN question (after decomposition) to pick up corrected entity names
+        # This ensures typos fixed by query decomposition (e.g., "Hugim" -> "Hugin") are captured
         nq = normalize_query(question if isinstance(question, str) else "")
         if (not nq.well) or (not nq.formation):
             cw, cf = _infer_recent_context(state.get("messages"))

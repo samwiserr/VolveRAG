@@ -114,7 +114,7 @@ def _formation_vocab() -> Set[str]:
     return {v for v in vocab if len(v) >= 3}
 
 
-def normalize_formation(text: str) -> Optional[str]:
+def normalize_formation(text: str, persist_dir: str = "./data/vectorstore") -> Optional[str]:
     """
     Normalize formation to the closest known token.
     - Prefer exact substring match (fast, deterministic)
@@ -131,7 +131,7 @@ def normalize_formation(text: str) -> Optional[str]:
     ql = re.sub(r'\b(the|a|an|of|for|in|at|on|by|with)\b', ' ', ql)
     ql = ' '.join(ql.split())  # Normalize whitespace
     
-    vocab = _formation_vocab()
+    vocab = _formation_vocab(persist_dir)
     if not vocab:
         return None
     

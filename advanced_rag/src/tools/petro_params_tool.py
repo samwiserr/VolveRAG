@@ -58,10 +58,25 @@ def _extract_well(text: str) -> Optional[str]:
     return extract_well(text)
 
 
-def _extract_formation(query: str) -> Optional[str]:
+def _extract_formation(query: str, persist_dir: str = "./data/vectorstore") -> Optional[str]:
     """Extract formation name from query using normalization."""
     from ..normalize.query_normalizer import normalize_formation
-    return normalize_formation(query)
+    # Use absolute path resolution to ensure vocab is loaded correctly
+    import os
+    from pathlib import Path
+    # Try to resolve persist_dir relative to the tool's location or cwd
+    if not Path(persist_dir).is_absolute():
+        # Try relative to this file's location
+        tool_dir = Path(__file__).resolve().parents[2]  # advanced_rag/
+        abs_persist = tool_dir / persist_dir
+        if abs_persist.exists():
+            persist_dir = str(abs_persist)
+        else:
+            # Fallback to cwd
+            abs_persist = Path.cwd() / persist_dir
+            if abs_persist.exists():
+                persist_dir = str(abs_persist)
+    return normalize_formation(query, persist_dir)
 
 
 def _match_formation_fuzzy(query_formation: str, available_formations: List[str]) -> Optional[str]:
@@ -433,8 +448,11 @@ class PetroParamsTool:
             )
 
         # Extract and match formation from query (with fuzzy matching for typos)
-        formation = _extract_formation(query)
-        logger.info(f"[PETRO_PARAMS] Extracted formation: '{formation}'")
+        # Use the cache path's parent directory as persist_dir for formation vocab
+        cache_path_obj = Path(self.cache_path)
+        persist_dir = str(cache_path_obj.parent) if cache_path_obj.parent.exists() else "./data/vectorstore"
+        formation = _extract_formation(query, persist_dir=persist_dir)
+        logger.info(f"[PETRO_PARAMS] Extracted formation: '{formation}' (from query: '{query[:100]}')")
         
         # Filter rows by formation if specified
         if formation:
