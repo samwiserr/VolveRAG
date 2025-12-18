@@ -906,10 +906,35 @@ def generate_answer(state: MessagesState):
                 return {"messages": [AIMessage(content="Evaluation parameters: failed to parse structured payload.")]}
 
             if isinstance(payload, dict) and payload.get("error"):
-                # Deterministic fallback: if structured lookup fails, do NOT stop.
-                # Let the retriever context (if any) drive a best-effort answer downstream.
-                payload = None
-                break
+                error_type = payload.get("error", "")
+                error_message = payload.get("message", "")
+                well = payload.get("well", "")
+                
+                # If eval params tool doesn't have data for this well, check if we have retriever context
+                # If retriever context exists, use it to generate answer. Otherwise, provide helpful error.
+                has_retriever_context = any(
+                    isinstance(m, ToolMessage) and 
+                    isinstance(m.content, str) and 
+                    (hasattr(m, 'name') and "retrieve" in str(m.name).lower() or len(m.content) > 500)
+                    for m in messages
+                )
+                
+                if error_type == "no_table_for_well" and has_retriever_context:
+                    # Eval params tool doesn't have data, but we have retriever context - use it
+                    logger.info(f"[ANSWER] Eval params tool returned 'no_table_for_well' for well {well}, but retriever context available - using retriever context")
+                    payload = None
+                    break  # Continue to answer generation with retriever context
+                elif error_type == "no_table_for_well":
+                    # No eval params data AND no retriever context - provide helpful error
+                    logger.warning(f"[ANSWER] Eval params tool returned 'no_table_for_well' for well {well}, and no retriever context available")
+                    return {"messages": [AIMessage(
+                        content=f"No evaluation parameters table was found for well {well} in the structured data. "
+                               f"The information may be available in the document text. Please try rephrasing your query or asking about a different well."
+                    )]}
+                else:
+                    # Other error types - let retriever context (if any) drive answer
+                    payload = None
+                    break
 
             well = payload.get("well") or ""
             formations = payload.get("formations") or []
