@@ -69,14 +69,18 @@ def extract_well(text: str) -> Optional[str]:
 
 
 @lru_cache(maxsize=1)
-def _formation_vocab() -> Set[str]:
+def _formation_vocab(persist_dir: str = "./data/vectorstore") -> Set[str]:
     """
     Build a controlled vocabulary from available caches so we can normalize formations.
+    Uses absolute path resolution to work correctly from any directory.
     """
     vocab: Set[str] = set()
+    
+    # Resolve paths relative to current working directory or use absolute paths
+    base_path = Path(persist_dir).resolve() if Path(persist_dir).is_absolute() else Path.cwd() / persist_dir
 
     # From petro params cache (values are base formation names)
-    petro = Path("./data/vectorstore/petro_params_cache.json")
+    petro = base_path / "petro_params_cache.json"
     if petro.exists():
         try:
             payload = json.loads(petro.read_text(encoding="utf-8"))
@@ -88,19 +92,26 @@ def _formation_vocab() -> Set[str]:
             pass
 
     # From well picks cache (formation names include "Fm.", groups, etc.)
-    picks = Path("./data/well_picks_cache.json")
-    if picks.exists():
-        try:
-            payload = json.loads(picks.read_text(encoding="utf-8"))
-            for r in payload.get("rows", []):
-                f = r.get("formation")
-                if isinstance(f, str) and f.strip():
-                    vocab.add(f.strip())
-        except Exception:
-            pass
+    # Try both relative to persist_dir and relative to cwd
+    picks_paths = [
+        base_path.parent / "well_picks_cache.json",  # ../well_picks_cache.json from vectorstore
+        Path.cwd() / "data" / "well_picks_cache.json",  # data/well_picks_cache.json
+        Path.cwd() / "well_picks_cache.json",  # well_picks_cache.json in cwd
+    ]
+    for picks in picks_paths:
+        if picks.exists():
+            try:
+                payload = json.loads(picks.read_text(encoding="utf-8"))
+                for r in payload.get("rows", []):
+                    f = r.get("formation")
+                    if isinstance(f, str) and f.strip():
+                        vocab.add(f.strip())
+                break  # Use first found
+            except Exception:
+                continue
 
     # From eval params cache (base formation names)
-    evalc = Path("./data/vectorstore/eval_params_cache.json")
+    evalc = base_path / "eval_params_cache.json"
     if evalc.exists():
         try:
             payload = json.loads(evalc.read_text(encoding="utf-8"))
@@ -252,11 +263,11 @@ def normalize_property(text: str) -> Optional[str]:
     return None
 
 
-def normalize_query(text: str) -> NormalizedQuery:
+def normalize_query(text: str, persist_dir: str = "./data/vectorstore") -> NormalizedQuery:
     q = text or ""
     ql = q.lower()
     well = extract_well(q)
-    formation = normalize_formation(q)
+    formation = normalize_formation(q, persist_dir=persist_dir)
     prop = normalize_property(q)
 
     # Simple intent classification

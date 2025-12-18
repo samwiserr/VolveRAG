@@ -254,7 +254,10 @@ def generate_query_or_respond(state: MessagesState, tools):
         # Normalize -> Resolve (deterministic, runs before any retrieval)
         # CRITICAL: Normalize the REWRITTEN question (after decomposition) to pick up corrected entity names
         # This ensures typos fixed by query decomposition (e.g., "Hugim" -> "Hugin") are captured
-        nq = normalize_query(question if isinstance(question, str) else "")
+        # Use absolute path for persist_dir to ensure formation vocab loads correctly
+        vectorstore_dir = Path(__file__).resolve().parents[2] / "data" / "vectorstore"
+        persist_dir_str = str(vectorstore_dir) if vectorstore_dir.exists() else "./data/vectorstore"
+        nq = normalize_query(question if isinstance(question, str) else "", persist_dir=persist_dir_str)
         if (not nq.well) or (not nq.formation):
             cw, cf = _infer_recent_context(state.get("messages"))
             if not nq.well and cw:
