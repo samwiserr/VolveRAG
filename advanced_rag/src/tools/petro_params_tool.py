@@ -251,12 +251,32 @@ class PetroParamsTool:
 
             logger.debug(f"[PETRO_PARAMS] Trying fuzzy matching for well '{well}' (norm_clean='{query_norm_clean}', norm_picks='{query_norm_picks}')")
             
-            # First pass: exact matches only
+            # First pass: exact matches only (including matches with common suffixes stripped)
+            # Well names in cache may have suffixes like "PETROPHYSICAL", "DATO", "FORMATION"
+            common_suffixes = ["PETROPHYSICAL", "DATO", "FORMATION", "REPORT"]
+            query_well_base = query_norm_clean
+            # Try to strip common suffixes from query (though it shouldn't have them)
+            for suffix in common_suffixes:
+                if query_well_base.endswith(suffix):
+                    query_well_base = query_well_base[:-len(suffix)]
+                    break
+            
             for stored_norm, stored_rows in self._by_well.items():
                 if not stored_rows:
                     continue
+                # Try exact match first
                 if query_norm_clean == stored_norm or (query_norm_picks and query_norm_picks == stored_norm):
                     logger.info(f"[PETRO_PARAMS] Found exact match: '{well}' -> '{stored_norm}'")
+                    rows = stored_rows
+                    break
+                # Try matching with suffixes stripped from stored key
+                stored_base = stored_norm
+                for suffix in common_suffixes:
+                    if stored_base.endswith(suffix):
+                        stored_base = stored_base[:-len(suffix)]
+                        break
+                if query_well_base == stored_base or (query_norm_picks and query_norm_picks == stored_base):
+                    logger.info(f"[PETRO_PARAMS] Found match (suffixes stripped): '{well}' (base: '{query_well_base}') -> '{stored_norm}' (base: '{stored_base}')")
                     rows = stored_rows
                     break
             
