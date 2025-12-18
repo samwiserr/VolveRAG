@@ -222,10 +222,11 @@ class PetroParamsTool:
 
         # Multi-strategy well matching (same approach as FormationPropertiesTool)
         logger.info(f"[PETRO_PARAMS] Starting well matching for '{well}'")
+        logger.info(f"[PETRO_PARAMS] Cache has {len(self._by_well)} well keys: {sorted(list(self._by_well.keys()))[:5]}")
         nwell = _norm_well(well)
         logger.info(f"[PETRO_PARAMS] Normalized well: '{nwell}'")
         rows = self._by_well.get(nwell, [])
-        logger.info(f"[PETRO_PARAMS] Initial lookup result: rows={len(rows) if rows else 0}")
+        logger.info(f"[PETRO_PARAMS] Initial lookup result: rows={len(rows) if rows else 0}, key='{nwell}'")
 
         if not rows:
             # Try normalizing like well picks (remove NO/WELL etc)
@@ -251,12 +252,13 @@ class PetroParamsTool:
         # Well names in cache may have suffixes like "PETROPHYSICAL", "DATO", "FORMATION"
         logger.info(f"[PETRO_PARAMS] Before suffix stripping check: rows={len(rows) if rows else 0}, nwell='{nwell}', will_check={not rows}")
         if not rows:
-            logger.info(f"[PETRO_PARAMS] Entering suffix stripping block - rows is empty")
+            logger.info(f"[PETRO_PARAMS] ✅ Entering suffix stripping block - rows is empty")
             common_suffixes = ["PETROPHYSICAL", "DATO", "FORMATION", "REPORT"]
             query_base = nwell
             logger.info(f"[PETRO_PARAMS] Trying suffix-stripped matching for '{well}' (norm: '{nwell}', base: '{query_base}')")
             logger.info(f"[PETRO_PARAMS] Checking {len(self._by_well)} stored well keys...")
             
+            matched = False
             for stored_norm, stored_rows in self._by_well.items():
                 if not stored_rows:
                     continue
@@ -269,11 +271,15 @@ class PetroParamsTool:
                         break
                 # Match if bases are equal
                 if query_base == stored_base:
-                    logger.info(f"[PETRO_PARAMS] ✅ Found match (suffix stripped): '{well}' (base: '{query_base}') -> '{stored_norm}' (base: '{stored_base}')")
+                    logger.info(f"[PETRO_PARAMS] ✅✅✅ FOUND MATCH (suffix stripped): '{well}' (base: '{query_base}') -> '{stored_norm}' (base: '{stored_base}')")
                     rows = stored_rows
+                    matched = True
                     break
                 else:
-                    logger.debug(f"[PETRO_PARAMS] No match: query_base='{query_base}' != stored_base='{stored_base}' (from '{stored_norm}')")
+                    logger.info(f"[PETRO_PARAMS] No match: query_base='{query_base}' != stored_base='{stored_base}' (from '{stored_norm}')")
+            
+            if not matched:
+                logger.warning(f"[PETRO_PARAMS] ❌ Suffix stripping did not find a match for '{well}' (base: '{query_base}')")
 
         if not rows:
             # Try matching against all stored well keys using normalized comparisons
