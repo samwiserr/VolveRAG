@@ -1051,7 +1051,9 @@ def main():
                 if png:
                     st.caption(f"Cited page preview (page {vpage})")
                     st.image(png, width='stretch')
-            st.markdown(_pdf_iframe(vp, vpage), unsafe_allow_html=True)
+            # Use st.components.v1.html for better JavaScript support
+            import streamlit.components.v1 as components
+            components.html(_pdf_iframe(vp, vpage), height=900)
         else:
             st.info("Click **View page** next to a source to open it here.")
 
