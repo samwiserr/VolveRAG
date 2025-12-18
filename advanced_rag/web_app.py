@@ -495,14 +495,18 @@ def _download_and_extract_vectorstore(zip_url: str, target_dir: Path) -> bool:
                 # Get list of all file paths in ZIP
                 all_files = zip_ref.namelist()
                 
-                # Check if all files are under a single root directory
+                # Normalize paths (handle both Windows \ and Unix /)
+                normalized_files = []
                 root_dirs = set()
                 for file_path in all_files:
                     # Skip empty entries
-                    if not file_path or file_path.endswith('/'):
+                    if not file_path or file_path.endswith('/') or file_path.endswith('\\'):
                         continue
+                    # Normalize path separators
+                    normalized = file_path.replace('\\', '/')
+                    normalized_files.append((file_path, normalized))
                     # Get the first directory component
-                    parts = file_path.split('/')
+                    parts = normalized.split('/')
                     if len(parts) > 1:
                         root_dirs.add(parts[0])
                 
@@ -527,9 +531,45 @@ def _download_and_extract_vectorstore(zip_url: str, target_dir: Path) -> bool:
                                 else:
                                     shutil.copy2(item, dest)
                 else:
-                    # Files are at root level, extract directly
-                    logger.info("ZIP contains files at root level. Extracting directly...")
-                    zip_ref.extractall(target_dir)
+                    # Files are at root level OR have mixed paths - need to handle Windows-style paths
+                    # Check if files have a common prefix like "vectorstore/"
+                    common_prefix = None
+                    for orig_path, norm_path in normalized_files:
+                        parts = norm_path.split('/')
+                        if len(parts) > 1:
+                            if common_prefix is None:
+                                common_prefix = parts[0]
+                            elif common_prefix != parts[0]:
+                                common_prefix = None
+                                break
+                    
+                    if common_prefix:
+                        # Files are in a subdirectory - manually extract to handle Windows paths
+                        logger.info(f"ZIP contains files in '{common_prefix}' subdirectory. Extracting and moving contents...")
+                        # Manually extract files to handle Windows-style paths correctly
+                        for orig_path, norm_path in normalized_files:
+                            # Get the relative path within the common_prefix
+                            if norm_path.startswith(common_prefix + '/'):
+                                rel_path = norm_path[len(common_prefix) + 1:]
+                            else:
+                                rel_path = norm_path
+                            
+                            # Skip if no relative path (shouldn't happen)
+                            if not rel_path:
+                                continue
+                            
+                            # Create destination path
+                            dest_path = target_dir / rel_path
+                            dest_path.parent.mkdir(parents=True, exist_ok=True)
+                            
+                            # Extract the file
+                            with zip_ref.open(orig_path) as source:
+                                with open(dest_path, 'wb') as dest:
+                                    dest.write(source.read())
+                    else:
+                        # Files are at root level, extract directly
+                        logger.info("ZIP contains files at root level. Extracting directly...")
+                        zip_ref.extractall(target_dir)
             
             # Verify extraction was successful by checking for chroma.sqlite3
             chroma_db = target_dir / "chroma.sqlite3"
