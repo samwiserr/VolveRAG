@@ -119,27 +119,45 @@ def normalize_formation(text: str) -> Optional[str]:
     Normalize formation to the closest known token.
     - Prefer exact substring match (fast, deterministic)
     - Fall back to fuzzy match over a bounded vocabulary (typo tolerant)
+    - Enhanced to handle more typos and variations
     """
-    ql = text.lower()
+    if not text or not text.strip():
+        return None
+    
+    ql = text.lower().strip()
     # quick heuristics for common "Formation"/"Fm" phrasing
-    ql = ql.replace("formation", " ").replace("fm.", " ").replace("fm", " ")
+    ql = ql.replace("formation", " ").replace("fm.", " ").replace("fm", " ").replace("fm.", " ")
+    # Remove common stop words that might interfere
+    ql = re.sub(r'\b(the|a|an|of|for|in|at|on|by|with)\b', ' ', ql)
+    ql = ' '.join(ql.split())  # Normalize whitespace
+    
     vocab = _formation_vocab()
+    if not vocab:
+        return None
+    
     # Longest match wins (avoids matching "Ty" inside other words)
     best = None
     for f in sorted(vocab, key=len, reverse=True):
-        if f.lower() in ql:
+        f_lower = f.lower()
+        # Try exact substring match
+        if f_lower in ql or ql in f_lower:
             best = f
             break
+        # Try word boundary match (e.g., "sleipner" matches "Sleipner" even if query has "sleipmer")
+        if re.search(r'\b' + re.escape(f_lower) + r'\b', ql):
+            best = f
+            break
+    
     if best:
         # Prefer base names for some cases (e.g., "Sleipner Fm." -> "Sleipner")
         return best
 
-    # Fuzzy fallback (bounded to vocab): handles typos like "hugni" -> "Hugin"
+    # Fuzzy fallback (bounded to vocab): handles typos like "hugni" -> "Hugin", "sleipmer" -> "Sleipner"
     try:
         from rapidfuzz import fuzz, process  # type: ignore
 
         if vocab:
-            # Use partial_ratio because the query contains many other words.
+            # Use multiple scoring methods for better typo tolerance
             # IMPORTANT: compare case-insensitively (vocab entries are Title Case).
             lower_map = {}
             for v in vocab:
@@ -147,16 +165,27 @@ def normalize_formation(text: str) -> Optional[str]:
                     lower_map[v.lower()] = v
             choices = list(lower_map.keys())
 
+            # Try partial_ratio first (good for typos within words)
             hit = process.extract(ql, choices, scorer=fuzz.partial_ratio, limit=5)
             if hit:
                 best_choice_l, best_score, _ = hit[0]
                 second_score = hit[1][1] if len(hit) > 1 else 0.0
-                # Slightly lower threshold with a stronger margin: this is bounded to a known
-                # formation vocabulary so we can be typo-tolerant without guessing.
-                THRESH = 84.0
+                # Lower threshold for better typo tolerance: 80% match with 8% margin
+                THRESH = 80.0
                 MARGIN = 8.0
                 if best_score >= THRESH and (best_score - second_score) >= MARGIN:
                     return lower_map.get(best_choice_l, best_choice_l)
+            
+            # Fallback to ratio scorer (good for character-level typos)
+            hit2 = process.extract(ql, choices, scorer=fuzz.ratio, limit=3)
+            if hit2:
+                best_choice_l2, best_score2, _ = hit2[0]
+                second_score2 = hit2[1][1] if len(hit2) > 1 else 0.0
+                # Slightly higher threshold for ratio (more strict)
+                THRESH2 = 85.0
+                MARGIN2 = 10.0
+                if best_score2 >= THRESH2 and (best_score2 - second_score2) >= MARGIN2:
+                    return lower_map.get(best_choice_l2, best_choice_l2)
     except Exception:
         pass
     return None
