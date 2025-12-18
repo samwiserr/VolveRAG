@@ -35,7 +35,7 @@ A state-of-the-art Retrieval-Augmented Generation (RAG) system for querying Volv
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/samwiserr/VolveRAG.git
+git clone https://github.com/samwiserr/volverag.git
 cd VolveRAG/advanced_rag
 
 # 2. Install dependencies

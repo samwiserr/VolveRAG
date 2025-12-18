@@ -275,6 +275,11 @@ def _ensure_pdfs_available(pdfs_dir: Path) -> bool:
         except Exception:
             pass
     
+    # Auto-fix: Update old repository name (VolveRAG) to new name (volverag)
+    if pdfs_url and "VolveRAG" in pdfs_url:
+        pdfs_url = pdfs_url.replace("VolveRAG", "volverag")
+        logger.info(f"Auto-corrected repository name in PDFS_URL: {pdfs_url}")
+    
     if not pdfs_url:
         return False  # No URL configured, can't download
     
@@ -577,6 +582,11 @@ def _ensure_vectorstore_available(persist_dir: str) -> bool:
         except Exception:
             pass
     
+    # Auto-fix: Update old repository name (VolveRAG) to new name (volverag)
+    if vectorstore_url and "VolveRAG" in vectorstore_url:
+        vectorstore_url = vectorstore_url.replace("VolveRAG", "volverag")
+        logger.info(f"Auto-corrected repository name in URL: {vectorstore_url}")
+    
     if not vectorstore_url:
         return False  # No URL configured, can't download
     
@@ -761,6 +771,11 @@ def main():
                 except Exception:
                     pass
             
+            # Auto-fix: Update old repository name (VolveRAG) to new name (volverag)
+            if vectorstore_url and "VolveRAG" in vectorstore_url:
+                vectorstore_url = vectorstore_url.replace("VolveRAG", "volverag")
+                logger.info(f"Auto-corrected repository name in URL: {vectorstore_url}")
+            
             if vectorstore_url:
                 with st.spinner("Downloading vectorstore... This may take a few minutes on first run."):
                     if _ensure_vectorstore_available(persist_dir):
@@ -769,6 +784,14 @@ def main():
                     else:
                         st.error("Failed to download vectorstore. Please check the VECTORSTORE_URL and try again.")
                         st.info(f"Attempted URL: {vectorstore_url}")
+                        # Provide helpful guidance
+                        st.warning("""
+                        **Common issues:**
+                        - Repository name changed from `VolveRAG` to `volverag` (lowercase)
+                        - Make sure the release exists: https://github.com/samwiserr/volverag/releases
+                        - Correct URL format: `https://github.com/samwiserr/volverag/releases/download/TAG/FILENAME.zip`
+                        - Update `VECTORSTORE_URL` in Streamlit Cloud Secrets with the new repository name
+                        """)
                         st.stop()
             else:
                 # No URL configured - show the original error message
