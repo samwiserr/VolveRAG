@@ -429,9 +429,11 @@ def generate_query_or_respond(state: MessagesState, tools):
                 return {"messages": [forced]}
         # Deterministic routing: for section-like queries, force section lookup tool
         # Examples: "Summary 15/9-F-11 / 15/9-F-11 T2", "Introduction 15/9-F-11..."
+        extracted_well_section = extract_well(question)
+        has_well_pattern_section = ("15" in ql and "9" in ql) or extracted_well_section is not None or nq.well is not None
         is_section_like = (
             any(k in ql for k in ["summary", "introduction", "conclusion", "results", "discussion", "abstract"])
-            and "15" in ql and "9" in ql
+            and has_well_pattern_section
         )
         if is_section_like:
             forced = AIMessage(
@@ -554,10 +556,13 @@ def generate_query_or_respond(state: MessagesState, tools):
             return {"messages": [forced]}
 
         # Deterministic routing: general numeric facts in notes/narrative (Rw, temperature gradient, reservoir temperature, cutoffs, etc.)
+        # Note: "matrix density" and "fluid density" are handled by evaluation parameters routing above
         # Check if ANY well is detected (not just hardcoded "15" and "9")
+        extracted_well_fact = extract_well(question)
+        has_well_pattern_fact = (nq.well is not None or extracted_well_fact is not None)
         is_fact_query = (
-            (nq.well is not None or extract_well(question) is not None)
-            and any(k in ql for k in ["rw", "temperature gradient", "reservoir temperature", "cutoff", "cut-offs", "cut off", "matrix density", "fluid density"])
+            has_well_pattern_fact
+            and any(k in ql for k in ["rw", "temperature gradient", "reservoir temperature", "cutoff", "cut-offs", "cut off"])
         )
         if is_fact_query:
             forced = AIMessage(
