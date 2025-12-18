@@ -379,7 +379,8 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
 
 def _pdf_iframe(file_path: str, page: Optional[int]) -> str:
     """
-    Display PDF in iframe, handling both local and downloaded paths.
+    Display PDF in object tag, handling both local and downloaded paths.
+    Chrome blocks data URIs in iframes, so we use object tag instead.
     """
     # Try to find the PDF file
     pdfs_dir = Path(__file__).resolve().parent / "data" / "pdfs"
@@ -412,16 +413,19 @@ def _pdf_iframe(file_path: str, page: Optional[int]) -> str:
         </div>
         """
 
-    # PDF found - display it
+    # PDF found - display it using object tag (works better in Chrome)
     logger.info(f"[PDF_VIEWER] Found PDF: {p}, page={page}")
     try:
         b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
+        # Use object tag instead of iframe - Chrome allows this
         # Best-effort: encourage the viewer to land at the top of the cited page
-        # (reduces cases where continuous-scroll highlights the next thumbnail).
         frag = f"#page={page}&view=FitH&zoom=page-width" if page else ""
         return (
-            f'<iframe src="data:application/pdf;base64,{b64}{frag}" '
-            f'width="100%" height="900" type="application/pdf"></iframe>'
+            f'<object data="data:application/pdf;base64,{b64}{frag}" '
+            f'type="application/pdf" width="100%" height="900" style="border: 1px solid #ddd; border-radius: 5px;">'
+            f'<p style="padding: 20px; text-align: center;">Your browser does not support PDFs. '
+            f'<a href="data:application/pdf;base64,{b64}" download="{p.name}">Download PDF</a></p>'
+            f'</object>'
         )
     except Exception as e:
         logger.error(f"Failed to load PDF {p}: {e}")
