@@ -58,8 +58,24 @@ Analyze the following query and determine:
 1. If it is a complex query that asks multiple things (e.g., "What is the porosity AND permeability for Hugin in 15/9-F-5?")
 2. If so, decompose it into simpler sub-queries
 3. Rewrite the query (or each sub-query) for better retrieval using domain-specific terminology
+4. **CRITICAL: Correct any typos or misspellings** in well names, formation names, and property names
 
 Query: "{query}"
+
+IMPORTANT TYPO CORRECTION RULES:
+- Well names: Correct format variations (e.g., "15-9-F-4" → "15/9-F-4", "159F4" → "15/9-F-4")
+- Formation names: Correct common misspellings:
+  * "sleipmer" → "Sleipner"
+  * "hugni" → "Hugin"
+  * "heather" → "Heather" (already correct, but ensure proper capitalization)
+  * "skagerrak" → "Skagerrak"
+  * "draupne" → "Draupne"
+- Property names: Expand abbreviations and correct typos:
+  * "poro" → "porosity"
+  * "phif" → "PHIF" or "porosity"
+  * "sw" → "water saturation"
+  * "net to gross" → "net-to-gross" or "net/gross"
+  * "klogh" → "KLOGH" or "permeability"
 
 For complex queries, decompose into sub-queries. For example:
 - "What is the porosity and permeability for Hugin in 15/9-F-5?" 
@@ -67,11 +83,12 @@ For complex queries, decompose into sub-queries. For example:
 
 For simple queries, just rewrite for better retrieval. For example:
 - "poro hugin 15/9-F-5" → "What is the porosity for Hugin formation in well 15/9-F-5?"
+- "net to gross sleipmer formation in 15/9-F-4" → "What is the net-to-gross ratio for the Sleipner formation in well 15/9-F-4?"
 
 Return a JSON object with:
 - is_complex: boolean (true if query needs decomposition)
 - sub_queries: list of strings (empty if not complex)
-- rewritten_query: string (rewritten version of the query or first sub-query if complex)
+- rewritten_query: string (rewritten version of the query with typos corrected, or first sub-query if complex)
 """
         
         response = llm.with_structured_output(QueryDecomposition).invoke([
