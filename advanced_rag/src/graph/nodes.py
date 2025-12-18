@@ -1253,8 +1253,8 @@ def generate_answer(state: MessagesState):
             ql = question.lower() if isinstance(question, str) else ""
 
             def detect_formation() -> Optional[str]:
-                """Detect formation from query, with improved matching."""
-                if not isinstance(formations, list):
+                """Detect formation from query, with improved matching and fuzzy matching for typos."""
+                if not isinstance(formations, list) or not formations:
                     return None
                 
                 # Normalize query for matching (remove common suffixes)
@@ -1271,9 +1271,44 @@ def generate_answer(state: MessagesState):
                     if f_lower in ql or f_base in ql_normalized:
                         return f
                 
-                # Second pass: check if query contains formation name (even if not in formations list)
+                # Second pass: fuzzy matching for typos (e.g., "sleipmer" -> "Sleipner")
+                try:
+                    from rapidfuzz import fuzz, process
+                    
+                    # Extract potential formation names from query
+                    # Common formation names in the dataset
+                    known_formations = ["draupne", "heather", "hugin", "sleipner", "ekofisk", "hod", "ty", "utsira", 
+                                      "skagerrak", "hordaland", "nordland", "shetland", "seabed"]
+                    
+                    # Check if any known formation appears in query (even with typos)
+                    for known_f in known_formations:
+                        if known_f in ql_normalized or any(char in ql_normalized for char in known_f[:4]):  # Partial match for typos
+                            # Try fuzzy matching against available formations
+                            formation_lower_map = {f.lower(): f for f in formations if isinstance(f, str) and f.strip()}
+                            if formation_lower_map:
+                                hits = process.extract(known_f, list(formation_lower_map.keys()), scorer=fuzz.partial_ratio, limit=3)
+                                if hits:
+                                    best_match, score, _ = hits[0]
+                                    if score >= 80.0:  # 80% match threshold
+                                        return formation_lower_map[best_match]
+                    
+                    # Third pass: direct fuzzy match of query text against formations
+                    formation_lower_map = {f.lower(): f for f in formations if isinstance(f, str) and f.strip()}
+                    if formation_lower_map:
+                        # Extract words from query that might be formation names
+                        query_words = [w for w in ql_normalized.split() if len(w) >= 4 and w.isalpha()]
+                        for word in query_words:
+                            hits = process.extract(word, list(formation_lower_map.keys()), scorer=fuzz.partial_ratio, limit=3)
+                            if hits:
+                                best_match, score, _ = hits[0]
+                                second_score = hits[1][1] if len(hits) > 1 else 0.0
+                                if score >= 80.0 and (score - second_score) >= 10.0:  # 80% match with 10% margin
+                                    return formation_lower_map[best_match]
+                except Exception:
+                    pass
+                
+                # Fourth pass: check if query contains formation name (even if not in formations list)
                 # This helps detect when user asks for a formation that's not in the table
-                # Common formation names in the dataset
                 known_formations = ["draupne", "heather", "hugin", "sleipner", "ekofisk", "hod", "ty", "utsira", 
                                   "skagerrak", "hordaland", "nordland", "shetland", "seabed"]
                 for known_f in known_formations:
