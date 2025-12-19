@@ -1058,12 +1058,18 @@ class RetrieverTool:
                 except Exception as e:
                     logger.warning(f"[RETRIEVE] General retrieval failed: {e}")
             
-            # If still no docs, use default retriever
+            # If still no docs, use default retriever (but only if no well filtering is needed)
             if not all_docs:
+                if well_name and not is_comprehensive_list:
+                    # If we're filtering by well and got no results, don't fall back to unfiltered
+                    logger.warning(f"[RETRIEVE] No documents found for well {well_name} after all filtering attempts")
+                    return f"No documents found for well {well_name}. Please verify the well name is correct."
                 docs = self.retriever.invoke(query)
                 # CRITICAL FIX: Filter default retriever results by well name if specified
                 if well_name and not is_comprehensive_list:
                     docs = self._filter_docs_by_well(docs, well_name)
+                    if not docs:
+                        return f"No documents found for well {well_name}. Please verify the well name is correct."
                 all_docs = docs
             
             # DOCUMENT-LEVEL RETRIEVAL: Retrieve ALL chunks from relevant documents
@@ -1498,12 +1504,18 @@ class RetrieverTool:
                 except Exception as e:
                     logger.warning(f"[RETRIEVE] General retrieval failed: {e}")
             
-            # If still no docs, use default retriever
+            # If still no docs, use default retriever (but only if no well filtering is needed)
             if not all_docs:
+                if well_name and not is_comprehensive_list:
+                    # If we're filtering by well and got no results, don't fall back to unfiltered
+                    logger.warning(f"[RETRIEVE] No documents found for well {well_name} after all filtering attempts")
+                    return f"No documents found for well {well_name}. Please verify the well name is correct."
                 docs = self.retriever.invoke(query)
                 # CRITICAL FIX: Filter default retriever results by well name if specified
                 if well_name and not is_comprehensive_list:
                     docs = self._filter_docs_by_well(docs, well_name)
+                    if not docs:
+                        return f"No documents found for well {well_name}. Please verify the well name is correct."
                 all_docs = docs
             
             # DOCUMENT-LEVEL RETRIEVAL: Retrieve ALL chunks from relevant documents
