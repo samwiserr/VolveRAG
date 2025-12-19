@@ -855,10 +855,15 @@ class RetrieverTool:
             """
             query_lower = query.lower()
             
+            # Log the query being processed
+            logger.info(f"[RETRIEVE] Processing query: '{query[:200]}'")
+            
             # Extract well name from query for filtering
             well_name = self._extract_well_name(query)
             if well_name:
                 logger.info(f"[RETRIEVE] Detected well name in query: {well_name}")
+            else:
+                logger.warning(f"[RETRIEVE] No well name extracted from query: '{query[:200]}'")
             
             # Detect formation-related queries
             is_formation_query = any(term in query_lower for term in [
