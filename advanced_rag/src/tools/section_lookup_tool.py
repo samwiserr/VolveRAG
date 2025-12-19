@@ -238,52 +238,76 @@ class SectionLookupTool:
         for i, e in enumerate(self._entries):
             sections_checked += 1
             # CRITICAL FIX: If a well is specified in query, ONLY consider sections that match that well
-            if q_well and query_well_num:
+            if q_well:
                 heading_well = _extract_query_well(e.heading)
                 heading_well_n = _norm_compact(heading_well) if heading_well else None
                 
-                # Check source path for well number (most reliable)
-                source_well_match = False
-                source_well_num = None
-                if e.source:
-                    # Extract well number from source (e.g., "15_9-F-4" or "15/9-F-4" or "15_9-F1")
-                    # Handle both "F-4" and "F4" formats, and also "F15" (no dash)
-                    source_match = re.search(r'[Ff][\s_/-]*-?\s*(\d+)', e.source, re.IGNORECASE)
-                    if source_match:
-                        source_well_num = source_match.group(1)
-                        if source_well_num == query_well_num:
-                            source_well_match = True
-                            logger.debug(f"[SECTION_LOOKUP] Section '{e.heading[:100]}' matches well number {query_well_num} in source")
-                        else:
-                            # Different well number in source - skip this section
-                            sections_rejected += 1
-                            logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well number mismatch in source (query: {query_well_num}, source: {source_well_num}, source_path: {e.source[:100]})")
-                            continue
-                    else:
-                        # No well number found in source - will check heading
-                        logger.debug(f"[SECTION_LOOKUP] No well number found in source path: {e.source[:100]}")
-                
-                # If source doesn't have well number, check heading
-                if not source_well_match:
-                    if heading_well:
-                        heading_well_num_match = re.search(r'[Ff][\s_/-]*-?\s*(\d+)', heading_well, re.IGNORECASE)
-                        if heading_well_num_match:
-                            heading_well_num = heading_well_num_match.group(1)
-                            if heading_well_num == query_well_num:
-                                # Well numbers match in heading
-                                pass
+                # If we have a well number, use strict numeric matching
+                if query_well_num:
+                    # Check source path for well number (most reliable)
+                    source_well_match = False
+                    source_well_num = None
+                    if e.source:
+                        # Extract well number from source (e.g., "15_9-F-4" or "15/9-F-4" or "15_9-F1")
+                        # Handle both "F-4" and "F4" formats, and also "F15" (no dash)
+                        source_match = re.search(r'[Ff][\s_/-]*-?\s*(\d+)', e.source, re.IGNORECASE)
+                        if source_match:
+                            source_well_num = source_match.group(1)
+                            if source_well_num == query_well_num:
+                                source_well_match = True
+                                logger.debug(f"[SECTION_LOOKUP] Section '{e.heading[:100]}' matches well number {query_well_num} in source")
                             else:
-                                # Different well number in heading - skip
-                                logger.debug(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well number mismatch in heading (query: {query_well_num}, heading: {heading_well_num})")
+                                # Different well number in source - skip this section
+                                sections_rejected += 1
+                                logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well number mismatch in source (query: {query_well_num}, source: {source_well_num}, source_path: {e.source[:100]})")
                                 continue
-                    elif heading_well_n and heading_well_n != q_well_n:
-                        # Heading has well but normalized doesn't match - skip
-                        logger.debug(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well mismatch (query: {q_well_n}, heading: {heading_well_n})")
+                        else:
+                            # No well number found in source - will check heading
+                            logger.debug(f"[SECTION_LOOKUP] No well number found in source path: {e.source[:100]}")
+                    
+                    # If source doesn't have well number, check heading
+                    if not source_well_match:
+                        if heading_well:
+                            heading_well_num_match = re.search(r'[Ff][\s_/-]*-?\s*(\d+)', heading_well, re.IGNORECASE)
+                            if heading_well_num_match:
+                                heading_well_num = heading_well_num_match.group(1)
+                                if heading_well_num == query_well_num:
+                                    # Well numbers match in heading
+                                    logger.debug(f"[SECTION_LOOKUP] Section '{e.heading[:100]}' matches well number {query_well_num} in heading")
+                                    pass
+                                else:
+                                    # Different well number in heading - skip
+                                    sections_rejected += 1
+                                    logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well number mismatch in heading (query: {query_well_num}, heading: {heading_well_num})")
+                                    continue
+                        elif heading_well_n and heading_well_n != q_well_n:
+                            # Heading has well but normalized doesn't match - skip
+                            sections_rejected += 1
+                            logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well mismatch (query: {q_well_n}, heading: {heading_well_n})")
+                            continue
+                        else:
+                            # No well found in heading or source - skip if well is required
+                            sections_rejected += 1
+                            logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - no well found in heading or source (query well: {q_well})")
+                            continue
+                else:
+                    # Well extracted but well number extraction failed - use normalized matching as fallback
+                    if heading_well_n and heading_well_n != q_well_n:
+                        sections_rejected += 1
+                        logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - normalized well mismatch (query: {q_well_n}, heading: {heading_well_n})")
                         continue
-                    else:
-                        # No well found in heading or source - skip if well is required
-                        logger.debug(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - no well found in heading or source")
-                        continue
+                    # Also check if source path contains the well
+                    if e.source and q_well_n:
+                        source_normalized = _norm_compact(e.source)
+                        if q_well_n not in source_normalized:
+                            # Check if source has a different well
+                            source_well = _extract_query_well(e.source)
+                            if source_well:
+                                source_well_n = _norm_compact(source_well)
+                                if source_well_n != q_well_n:
+                                    sections_rejected += 1
+                                    logger.info(f"[SECTION_LOOKUP] Rejecting section '{e.heading[:100]}' - well mismatch in source (query: {q_well_n}, source: {source_well_n})")
+                                    continue
             
             score = 0.0
             if e.heading_norm == qn:
@@ -303,7 +327,10 @@ class SectionLookupTool:
         logger.info(f"[SECTION_LOOKUP] Checked {sections_checked} sections, rejected {sections_rejected} for well mismatch, best_score: {best_score}")
         
         if best_i is None or best_score < 10.0:
-            logger.warning(f"[SECTION_LOOKUP] No matching section found for query: '{query[:200]}' (best_score: {best_score})")
+            if q_well and query_well_num:
+                logger.warning(f"[SECTION_LOOKUP] No matching section found for well {q_well} (well_num: {query_well_num}). Checked {sections_checked} sections, rejected {sections_rejected} for well mismatch. This likely means no sections exist for this well in the index.")
+            else:
+                logger.warning(f"[SECTION_LOOKUP] No matching section found for query: '{query[:200]}' (best_score: {best_score}, well extraction: q_well={q_well}, query_well_num={query_well_num})")
             return "[SECTION] No matching section heading found for query."
 
         e = self._entries[best_i]
