@@ -694,6 +694,9 @@ class RetrieverTool:
     def _extract_well_name(self, query: str) -> Optional[str]:
         """Extract well name from query."""
         import re
+        if not query:
+            return None
+        
         # Pattern: 15/9-19A, 15_9-19A, 15-9-19A, 15/9-F5, 15/9-F-5, etc.
         # Handle both F5 and F-5 formats
         # Try full well name first (15/9-19A, 15/9-F5, 15/9-F-5)
@@ -705,14 +708,34 @@ class RetrieverTool:
             r'(15[_\s/-]9[_\s/-]?[-]?\d+[A-Z]?)',  # 15/9-19A with optional dash
             r'(\d+[_\s/-]\d+[_\s/-]\d+[A-Z]?)',  # General pattern (e.g., 15/9-19A)
         ]
+        
+        all_matches = []
         for pattern in patterns:
-            match = re.search(pattern, query, re.IGNORECASE)
-            if match:
-                # Return the full match, prioritizing groups if they exist
-                well_name = match.group(1) if match.lastindex else match.group(0)
-                # Normalize separators to a consistent format
-                well_name = re.sub(r'[\s_]', '/', well_name)  # Convert spaces/underscores to /
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            if matches:
+                for match in matches:
+                    well_name = match if isinstance(match, str) else (match[0] if isinstance(match, tuple) else str(match))
+                    # Normalize separators to a consistent format
+                    well_name = re.sub(r'[\s_]', '/', well_name)  # Convert spaces/underscores to /
+                    all_matches.append(well_name)
+        
+        if all_matches:
+            # If multiple wells found, prefer the first one (usually the original query's well)
+            # Normalize all matches and return the first unique one
+            normalized_matches = []
+            seen = set()
+            for match in all_matches:
+                normalized = re.sub(r'[\s_/-]', '', match.upper())
+                if normalized not in seen:
+                    seen.add(normalized)
+                    normalized_matches.append(match)
+            
+            if normalized_matches:
+                well_name = normalized_matches[0]
+                logger.debug(f"[EXTRACT_WELL] Extracted well name: '{well_name}' from query (found {len(all_matches)} matches, using first)")
                 return well_name
+        
+        logger.debug(f"[EXTRACT_WELL] No well name found in query: '{query[:100]}'")
         return None
     
     def _filter_docs_by_well(self, docs: List[Document], well_name: str) -> List[Document]:
