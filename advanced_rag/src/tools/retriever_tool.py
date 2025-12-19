@@ -1112,9 +1112,15 @@ class RetrieverTool:
                     logger.info(f"[RETRIEVE] Pre-filtered sources to {len(filtered_sources)} documents matching well {well_name}")
                     relevant_sources = filtered_sources
                 else:
-                    # If no sources match, use all sources but will filter chunks later
+                    # CRITICAL: If no sources match the well, don't retrieve from wrong-well documents
+                    # Instead, return empty or only use sources that passed initial filtering
+                    # This prevents retrieving ALL chunks from wrong-well documents
+                    logger.warning(f"[RETRIEVE] No sources matched well {well_name} after pre-filtering. Only using sources from filtered initial retrieval.")
+                    # Only use sources from documents that passed initial filtering
                     relevant_sources = {doc.metadata.get('source', '') for doc in all_docs if doc.metadata.get('source', '')}
-                    logger.warning(f"[RETRIEVE] No sources matched well {well_name}, will filter chunks after retrieval")
+                    if not relevant_sources:
+                        logger.warning(f"[RETRIEVE] No documents found for well {well_name} - returning empty result")
+                        return "No documents found for the specified well. Please verify the well name is correct."
             else:
                 # No well filtering needed - use all sources
                 relevant_sources = set()
@@ -1546,9 +1552,15 @@ class RetrieverTool:
                     logger.info(f"[RETRIEVE] Pre-filtered sources to {len(filtered_sources)} documents matching well {well_name}")
                     relevant_sources = filtered_sources
                 else:
-                    # If no sources match, use all sources but will filter chunks later
+                    # CRITICAL: If no sources match the well, don't retrieve from wrong-well documents
+                    # Instead, return empty or only use sources that passed initial filtering
+                    # This prevents retrieving ALL chunks from wrong-well documents
+                    logger.warning(f"[RETRIEVE] No sources matched well {well_name} after pre-filtering. Only using sources from filtered initial retrieval.")
+                    # Only use sources from documents that passed initial filtering
                     relevant_sources = {doc.metadata.get('source', '') for doc in all_docs if doc.metadata.get('source', '')}
-                    logger.warning(f"[RETRIEVE] No sources matched well {well_name}, will filter chunks after retrieval")
+                    if not relevant_sources:
+                        logger.warning(f"[RETRIEVE] No documents found for well {well_name} - returning empty result")
+                        return "No documents found for the specified well. Please verify the well name is correct."
             else:
                 # No well filtering needed - use all sources
                 relevant_sources = set()
