@@ -1047,7 +1047,9 @@ class RetrieverTool:
                         if general_docs:
                             logger.info(f"[RETRIEVE] Filtered general docs to {len(general_docs)} chunks for well {well_name} (from {original_count})")
                         else:
-                            logger.warning(f"[RETRIEVE] No general docs found for well {well_name} after filtering, using all {original_count} chunks")
+                            logger.warning(f"[RETRIEVE] No general docs found for well {well_name} after filtering (filtered from {original_count} chunks). Not using unfiltered documents.")
+                            # Don't use unfiltered documents - they're for the wrong well
+                            general_docs = []
                     
                     # Add general docs, avoiding duplicates
                     existing_sources = {doc.metadata.get('source', '') for doc in all_docs}
@@ -1493,7 +1495,9 @@ class RetrieverTool:
                         if general_docs:
                             logger.info(f"[RETRIEVE] Filtered general docs to {len(general_docs)} chunks for well {well_name} (from {original_count})")
                         else:
-                            logger.warning(f"[RETRIEVE] No general docs found for well {well_name} after filtering, using all {original_count} chunks")
+                            logger.warning(f"[RETRIEVE] No general docs found for well {well_name} after filtering (filtered from {original_count} chunks). Not using unfiltered documents.")
+                            # Don't use unfiltered documents - they're for the wrong well
+                            general_docs = []
                     
                     # Add general docs, avoiding duplicates
                     existing_sources = {doc.metadata.get('source', '') for doc in all_docs}
