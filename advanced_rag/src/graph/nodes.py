@@ -1069,7 +1069,7 @@ def generate_answer(state: MessagesState):
     for msg in messages:
         if isinstance(msg, ToolMessage) and isinstance(msg.content, str) and msg.content.startswith("[EVAL_PARAMS_JSON]"):
             import json
-            import re
+            # re is imported at module level
 
             raw = msg.content[len("[EVAL_PARAMS_JSON]") :].strip()
             try:
