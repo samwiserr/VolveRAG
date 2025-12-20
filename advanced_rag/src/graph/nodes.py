@@ -252,11 +252,26 @@ def generate_query_or_respond(state: MessagesState, tools):
 
         # Phase 3: Query decomposition and rewriting
         # BUT: Skip decomposition for "all wells" queries to preserve original query text
+        # Use the same detection logic as the routing check below
         decomposed_sub_queries = []
+        has_formation_keyword = "formation" in ql or "formations" in ql
+        has_all_keyword = any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
+        has_list_all = "list" in ql and "all" in ql
+        has_properties = "properties" in ql or "petrophysical" in ql
+        # Check if a specific well is mentioned (this takes priority)
+        well_in_query = extract_well(original_question) if original_question else None
+        
         is_all_wells_query = (
-            ("formation" in ql or "formations" in ql)
-            and ("properties" in ql or "petrophysical" in ql)
-            and any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
+            not well_in_query  # No specific well mentioned
+            and has_formation_keyword
+            and (
+                # Pattern 1: Has "properties" or "petrophysical" + "all" keyword
+                (has_properties and has_all_keyword)
+                # Pattern 2: "list all" + "formation" (even without properties)
+                or (has_list_all and has_formation_keyword)
+                # Pattern 3: "all" + "formation" + "available" (e.g., "list all available formation")
+                or (has_all_keyword and has_formation_keyword and "available" in ql)
+            )
         )
         
         if not is_all_wells_query and isinstance(question, str) and os.getenv("RAG_ENABLE_QUERY_DECOMPOSITION", "true").lower() in {"1", "true", "yes"}:
@@ -340,8 +355,7 @@ def generate_query_or_respond(state: MessagesState, tools):
         well_for_tool = original_well or nq.well
         if original_well and well_for_tool:
             # Remove any well mentions from rewritten query that don't match original
-            import re
-            # Find all well mentions in tool_query
+            # Find all well mentions in tool_query (re is imported at module level)
             well_mentions = re.findall(r'15[_\s/-]?9[_\s/-]?[Ff]?[_\s/-]*-?\s*\d+[A-Z]?', tool_query, re.IGNORECASE)
             # Remove well mentions that don't match original_well
             for mention in well_mentions:
@@ -406,7 +420,8 @@ def generate_query_or_respond(state: MessagesState, tools):
 
             # Check for parameter keywords (including variations)
             param_keywords = ["petrophysical parameters", "petrophysical parameter", "net to gross", "net-to-gross", "netgros", "net/gross", "ntg", "n/g", "phif", "phi", "poro", "porosity", "water saturation", "sw", "klogh", "permeability", "permeab", "perm"]
-            has_param_keyword = any(k in ql for k in param_keywords) or re.search(r'\bsw\b', ql, re.IGNORECASE) or re.search(r'\bk\b', ql, re.IGNORECASE)
+            # Use re module (imported at top) - check for standalone 'sw' or 'k' as parameter keywords
+            has_param_keyword = any(k in ql for k in param_keywords) or bool(re.search(r'\bsw\b', ql, re.IGNORECASE)) or bool(re.search(r'\bk\b', ql, re.IGNORECASE))
             
             # Check for well pattern (15/9 or similar)
             extracted_well = extract_well(question)
@@ -600,17 +615,23 @@ def generate_query_or_respond(state: MessagesState, tools):
         # Deterministic routing: one-shot "formations + petrophysical properties"
         # Check for "all formations and properties" queries first (no well required)
         # Improved detection to handle "list all well formations and their properties"
+        # Also handle "list all available formation" (singular, no properties)
+        has_formation_keyword = "formation" in ql or "formations" in ql
+        has_all_keyword = any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
+        has_list_all = "list" in ql and "all" in ql
+        has_properties = "properties" in ql or "petrophysical" in ql
+        
         is_all_formations_properties = (
-            ("formation" in ql or "formations" in ql)
-            and ("properties" in ql or "petrophysical" in ql)
-            and any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
-            and not has_specific_well  # No specific well mentioned
-        ) or (
-            # Also match "list all well formations" pattern
-            ("list" in ql and "all" in ql)
-            and ("formation" in ql or "formations" in ql)
-            and ("properties" in ql or "petrophysical" in ql)
-            and not has_specific_well
+            not has_specific_well  # No specific well mentioned
+            and has_formation_keyword
+            and (
+                # Pattern 1: Has "properties" or "petrophysical" + "all" keyword
+                (has_properties and has_all_keyword)
+                # Pattern 2: "list all" + "formation" (even without properties)
+                or (has_list_all and has_formation_keyword)
+                # Pattern 3: "all" + "formation" + "available" (e.g., "list all available formation")
+                or (has_all_keyword and has_formation_keyword and "available" in ql)
+            )
         )
         if is_all_formations_properties:
             logger.info(f"[ROUTING] Routing to formation properties tool for ALL wells")

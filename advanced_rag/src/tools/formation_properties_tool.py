@@ -163,25 +163,31 @@ class FormationPropertiesTool:
         # - "all wells formations and properties"
         # - "each well formations and properties"
         # - "list all formations and their properties"
+        # - "list all available formation" (singular, no properties)
+        # - "list all formations" (without properties)
         
         # First, check if a specific well is mentioned (this takes priority)
         well = _extract_platform_or_well(query)
         
         # If no specific well detected, check for "all wells" patterns
+        # More flexible: allow queries without "properties" if they have "list all" + "formation"
+        has_formation_keyword = "formation" in ql or "formations" in ql
+        has_all_keyword = any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
+        has_list_all = "list" in ql and "all" in ql
+        has_properties = "properties" in ql or "petrophysical" in ql
+        
         wants_all_wells = (
             not well  # No specific well detected
-            and ("formation" in ql or "formations" in ql)
-            and ("properties" in ql or "petrophysical" in ql)
-            and any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
-        )
-        
-        # Also handle "list all well formations" pattern
-        if not wants_all_wells and not well:
-            wants_all_wells = (
-                ("list" in ql and "all" in ql)
-                and ("formation" in ql or "formations" in ql)
-                and ("properties" in ql or "petrophysical" in ql)
+            and has_formation_keyword
+            and (
+                # Pattern 1: Has "properties" or "petrophysical" + "all" keyword
+                (has_properties and has_all_keyword)
+                # Pattern 2: "list all" + "formation" (even without properties)
+                or (has_list_all and has_formation_keyword)
+                # Pattern 3: "all" + "formation" + "available" (e.g., "list all available formation")
+                or (has_all_keyword and has_formation_keyword and "available" in ql)
             )
+        )
         
         if wants_all_wells:
             # Return formations and properties for ALL wells
