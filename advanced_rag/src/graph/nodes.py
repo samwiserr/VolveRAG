@@ -657,13 +657,16 @@ def generate_query_or_respond(state: MessagesState, tools):
         
         # Route single-well "all formations" queries first (priority)
         if is_single_well_all_formations:
+            # Use original question to preserve the query structure
+            single_well_query = original_question if original_question else tool_query
             logger.info(f"[ROUTING] Routing to formation properties tool for SINGLE well: {nq.well or extract_well(question)}")
+            logger.info(f"[ROUTING] Using query for single-well lookup: '{single_well_query}'")
             forced = AIMessage(
                 content="",
                 tool_calls=[
                     {
                         "name": "lookup_formation_properties",
-                        "args": {"query": tool_query},
+                        "args": {"query": single_well_query},
                         "id": "call_lookup_formation_properties_single_well_1",
                     }
                 ],
