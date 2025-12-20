@@ -866,7 +866,7 @@ def grade_documents(state: MessagesState) -> Literal["generate_answer", "rewrite
     context_lower = context.lower()
     
     # Extract well name pattern (e.g., "15/9-F-4", "15_9-F-4", "15-9-F-4")
-    import re
+    # re is imported at module level
     well_patterns = re.findall(r'15[_\s/-]?9[_\s/-]?F[_\s/-]?[0-9A-Z]+', question_lower)
     
     # Check if question appears to be a partial sentence (doesn't end with punctuation and has "is" or similar)
@@ -938,7 +938,7 @@ def generate_answer(state: MessagesState):
     Returns:
         Dictionary with 'messages' key containing final answer
     """
-    import re
+    # re is imported at module level
     from langchain_core.messages import ToolMessage, AIMessage
     
     messages = state["messages"]
@@ -1438,7 +1438,7 @@ def generate_answer(state: MessagesState):
     for msg in messages:
         if isinstance(msg, ToolMessage) and isinstance(msg.content, str) and msg.content.startswith("[PETRO_PARAMS_JSON]"):
             import json
-            import re
+            # re is imported at module level
 
             raw = msg.content[len("[PETRO_PARAMS_JSON]") :].strip()
             try:
@@ -2108,7 +2108,7 @@ def generate_answer(state: MessagesState):
     # Check if question is a partial sentence - if so, find exact completion
     if not question_lower.endswith(('.', '!', '?', ':')) and len(question.split()) > 5:
         # Likely a partial sentence - try to find exact completion in context
-        import re
+        # re is imported at module level
         # Escape special regex characters in question
         question_escaped = re.escape(question)
         # Look for text that starts with the question
@@ -2219,7 +2219,7 @@ def generate_answer(state: MessagesState):
     
     # Phase 1.5: Extract source citations with page numbers from context
     # Parse citations from context (format: [Source: path (page X)] or [Source: path (pages X-Y)])
-    import re
+    # re is imported at module level
     citations = []
     citation_pattern = r'\[Source:\s*([^\]]+?)\s*(?:\(page\s+(\d+)\)|\(pages\s+(\d+)\s*-\s*(\d+)\))?\]'
     
