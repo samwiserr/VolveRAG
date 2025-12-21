@@ -313,13 +313,13 @@ class PetroParamsTool:
             logger.info(f"[PETRO_PARAMS] After cleaned attempt: rows={len(rows) if rows else 0}, nw3='{nw3}'")
         
         # Try matching with suffixes stripped from cache keys
-        # Well names in cache may have suffixes like "PETROPHYSICAL", "DATO", "FORMATION"
+        # Well names in cache may have suffixes like "PETROPHYSICAL", "FORMATION"
         logger.warning(f"[PETRO_PARAMS] ========== BEFORE SUFFIX STRIPPING: rows={len(rows) if rows else 0}, nwell='{nwell}' ==========")
         logger.info(f"[PETRO_PARAMS] Before suffix stripping check: rows={len(rows) if rows else 0}, nwell='{nwell}', will_check={not rows}")
         if not rows:
             logger.warning(f"[PETRO_PARAMS] ========== ✅✅✅ ENTERING SUFFIX STRIPPING BLOCK - rows is empty ✅✅✅ ==========")
             logger.info(f"[PETRO_PARAMS] ✅ Entering suffix stripping block - rows is empty")
-            common_suffixes = ["PETROPHYSICAL", "DATO", "FORMATION", "REPORT"]
+            common_suffixes = ["PETROPHYSICAL", "FORMATION", "REPORT"]
             query_base = nwell
             logger.info(f"[PETRO_PARAMS] Trying suffix-stripped matching for '{well}' (norm: '{nwell}', base: '{query_base}')")
             logger.info(f"[PETRO_PARAMS] Checking {len(self._by_well)} stored well keys...")
@@ -360,8 +360,8 @@ class PetroParamsTool:
             logger.debug(f"[PETRO_PARAMS] Trying fuzzy matching for well '{well}' (norm_clean='{query_norm_clean}', norm_picks='{query_norm_picks}')")
             
             # First pass: exact matches only (including matches with common suffixes stripped)
-            # Well names in cache may have suffixes like "PETROPHYSICAL", "DATO", "FORMATION"
-            common_suffixes = ["PETROPHYSICAL", "DATO", "FORMATION", "REPORT"]
+            # Well names in cache may have suffixes like "PETROPHYSICAL", "FORMATION"
+            common_suffixes = ["PETROPHYSICAL", "FORMATION", "REPORT"]
             query_well_base = query_norm_clean
             # Try to strip common suffixes from query (though it shouldn't have them)
             for suffix in common_suffixes:

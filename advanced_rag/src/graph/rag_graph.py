@@ -6,6 +6,11 @@ import logging
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.messages import ToolMessage
+# Import from old nodes.py for now (maintains backward compatibility)
+# TODO: Once new structure is complete, switch to: from .nodes import ...
+# Import from nodes.py (old implementation)
+# The new nodes_refactored/ directory structure exists for future migration
+# but we continue using the old nodes.py for backward compatibility
 from .nodes import generate_query_or_respond, grade_documents, rewrite_question, generate_answer
 
 logger = logging.getLogger(__name__)

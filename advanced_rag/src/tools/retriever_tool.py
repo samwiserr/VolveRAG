@@ -269,9 +269,22 @@ class RetrieverTool:
             "md": "measured depth",
             "tvd": "true vertical depth",
             "tvdss": "true vertical depth sub sea",
-            "wlc": "well log correlation",
-            "lfp": "log formation parameters",
+            "wlc": "well log correlation wireline logging composite",
+            "lfp": "log formation parameters low frequency permeability",
+            "dato": "data report",
+            "cpi": "composite petrophysical interpretation",
         }
+        
+        # Report type expansions for better retrieval
+        report_type_expansions = []
+        if "wlc" in ql or "wireline" in ql or "composite" in ql:
+            report_type_expansions.extend(["wlc", "wireline logging composite", "composite report", "well log correlation", "wlc_petrophysical_composite"])
+        if "lfp" in ql or ("low frequency" in ql and "permeability" in ql):
+            report_type_expansions.extend(["lfp", "low frequency permeability", "log formation parameters", "lfp report"])
+        if "dato" in ql:
+            report_type_expansions.extend(["dato", "data report", "dato report"])
+        if "cpi" in ql or ("composite" in ql and "petrophysical" in ql and "interpretation" in ql):
+            report_type_expansions.extend(["cpi", "composite petrophysical interpretation"])
         
         # Evaluation parameter synonyms for better retrieval
         eval_param_expansions = []
@@ -289,10 +302,24 @@ class RetrieverTool:
         if "archie" in ql:
             eval_param_expansions.extend(["archie a", "archie m", "archie n", "tortuosity", "cementation exponent", "saturation exponent", "evaluation parameters"])
 
+        # Report type expansions for better retrieval of WLC, LFP, DATO, CPI reports
+        report_type_expansions = []
+        if "wlc" in ql or "wireline" in ql or ("composite" in ql and "report" in ql):
+            report_type_expansions.extend(["wlc", "wireline logging composite", "composite report", "well log correlation", "wlc_petrophysical_composite"])
+        if "lfp" in ql or ("low frequency" in ql and "permeability" in ql):
+            report_type_expansions.extend(["lfp", "low frequency permeability", "log formation parameters", "lfp report"])
+        if "dato" in ql:
+            report_type_expansions.extend(["dato", "data report", "dato report"])
+        if "cpi" in ql or ("composite" in ql and "petrophysical" in ql and "interpretation" in ql):
+            report_type_expansions.extend(["cpi", "composite petrophysical interpretation"])
+
         expanded_terms: List[str] = []
         for ac, full in acronyms.items():
             if re.search(rf"\b{re.escape(ac)}\b", ql):
                 expanded_terms.append(full)
+        
+        # Add report type expansions
+        expanded_terms.extend(report_type_expansions)
 
         # Well-name variants
         # Capture patterns like 15/9-F-11, 15_9-F-11, 15-9-F-11, 15/9-19A, 15/9-F5, etc.
@@ -837,11 +864,22 @@ class RetrieverTool:
         
         @tool
         def retrieve_petrophysical_docs(query: str) -> str:
-            """Search and return information from petrophysical documents.
+            """Search and return information from all Volve well reports and documents.
             
             Use this tool to retrieve relevant context from the document database
             when answering questions about wells, formations, petrophysical data,
+            WLC (Wireline Logging Composite) reports, LFP (Low Frequency Permeability) reports,
+            DATO reports, CPI (Composite Petrophysical Interpretation) reports,
             or any information contained in the processed documents.
+            
+            This tool searches across ALL report types:
+            - Petrophysical reports (PETROPHYSICAL_REPORT_*.PDF)
+            - WLC composite reports (WLC_PETROPHYSICAL_COMPOSITE_*.PDF)
+            - LFP reports (*.doc files)
+            - DATO reports
+            - CPI reports
+            - Well picks data
+            - Any other processed documents (PDF, DOCX, DOC, TXT)
             
             For queries about "all wells" or "all formations", this will retrieve
             information from multiple documents to provide comprehensive answers.
