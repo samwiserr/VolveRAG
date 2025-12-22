@@ -90,3 +90,26 @@ __all__ = [
     "sanitize_error_message",
     "log_error_with_context",
 ]
+
+# Monitoring exports
+try:
+    from .monitoring import (
+        get_metrics_collector,
+        record_request_metric,
+        record_llm_metric,
+        record_cache_metric,
+        check_health,
+        MetricsCollector,
+        HealthStatus,
+    )
+    __all__.extend([
+        "get_metrics_collector",
+        "record_request_metric",
+        "record_llm_metric",
+        "record_cache_metric",
+        "check_health",
+        "MetricsCollector",
+        "HealthStatus",
+    ])
+except ImportError:
+    pass  # Monitoring is optional

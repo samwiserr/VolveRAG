@@ -56,11 +56,23 @@ class RetrievalThresholds:
 
 
 def get_matching_thresholds() -> MatchingThresholds:
+    """
+    Get matching thresholds from configuration or defaults.
+    
+    Returns:
+        MatchingThresholds instance with configured or default values
+    """
     """Get matching thresholds (singleton)."""
     return MatchingThresholds.from_config()
 
 
 def get_retrieval_thresholds() -> RetrievalThresholds:
+    """
+    Get retrieval thresholds from configuration or defaults.
+    
+    Returns:
+        RetrievalThresholds instance with configured or default values
+    """
     """Get retrieval thresholds (singleton)."""
     return RetrievalThresholds.from_config()
 
