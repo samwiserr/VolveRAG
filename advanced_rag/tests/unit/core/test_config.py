@@ -51,18 +51,20 @@ class TestAppConfig:
         monkeypatch.setenv("CHUNK_SIZE", "400")
         monkeypatch.setenv("CHUNK_OVERLAP", "450")  # Invalid: > chunk_size
         
-        reload_config()
-        with pytest.raises(ConfigurationError):
-            get_config()
+        # reload_config() calls get_config() internally, so exception is raised there
+        # We need to catch it during reload_config(), not get_config()
+        with pytest.raises(ConfigurationError, match="chunk_overlap must be less than chunk_size"):
+            reload_config()
     
     def test_config_validates_log_format(self, monkeypatch):
         """Test config validates log_format."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.setenv("LOG_FORMAT", "invalid")  # Invalid format
         
-        reload_config()
-        with pytest.raises(ConfigurationError):
-            get_config()
+        # reload_config() calls get_config() internally, so exception is raised there
+        # We need to catch it during reload_config(), not get_config()
+        with pytest.raises(ConfigurationError, match="log_format must be 'json' or 'text'"):
+            reload_config()
     
     def test_config_path_resolution(self, monkeypatch, tmp_path):
         """Test config resolves paths correctly."""

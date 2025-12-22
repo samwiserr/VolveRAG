@@ -70,6 +70,26 @@ class AppConfig(BaseSettings):
         default=LLMModel.GPT_4O,
         env="OPENAI_MODEL"
     )
+    
+    @field_validator("llm_model", mode="before")
+    @classmethod
+    def validate_llm_model(cls, v):
+        """Ensure LLM model enum is parsed correctly from string/environment."""
+        if isinstance(v, str):
+            # Try exact match first
+            for member in LLMModel:
+                if member.value == v:
+                    return member
+            # Try case-insensitive match
+            v_lower = v.lower()
+            for member in LLMModel:
+                if member.value.lower() == v_lower:
+                    return member
+            # Fallback to _missing_ handler
+            return LLMModel._missing_(v)
+        # If already an enum member, return as-is
+        return v
+    
     grade_model: LLMModel = Field(
         default=LLMModel.GPT_4O,
         env="OPENAI_GRADE_MODEL"
