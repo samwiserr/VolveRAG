@@ -47,3 +47,20 @@ __all__ = [
     "_render_pdf_page_png",
     "_get_graph",
 ]
+
+# Streamlit executes files directly, so call main() at module level
+# This ensures the app runs when Streamlit executes this file via `streamlit run web_app.py`
+# Note: This file is meant to be executed by Streamlit, not imported as a module
+try:
+    main()
+except Exception as e:
+    # If main() fails, try to show error in Streamlit
+    try:
+        import streamlit as st
+        st.error(f"Application failed to start: {e}")
+        st.exception(e)
+    except:
+        # If Streamlit isn't available, just raise the error
+        import traceback
+        traceback.print_exc()
+        raise
