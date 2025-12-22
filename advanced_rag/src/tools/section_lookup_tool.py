@@ -24,6 +24,8 @@ from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
 from langchain_core.documents import Document
+from ..core.result import Result, AppError, ErrorType
+from ..core.tool_adapter import tool_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -208,13 +210,23 @@ class SectionLookupTool:
         out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info(f"[OK] Wrote section index with {len(sections)} sections to {out}")
 
-    def lookup(self, query: str) -> str:
-        q = query.strip()
-        qn = _norm_compact(q)
-        q_well = _extract_query_well(q)
-        q_well_n = _norm_compact(q_well) if q_well else None
+    def lookup(self, query: str) -> Result[str, AppError]:
+        """
+        Lookup section by heading.
+        
+        Args:
+            query: Query string containing section heading and optionally well name
+            
+        Returns:
+            Result containing section text or error
+        """
+        try:
+            q = query.strip()
+            qn = _norm_compact(q)
+            q_well = _extract_query_well(q)
+            q_well_n = _norm_compact(q_well) if q_well else None
 
-        logger.info(f"[SECTION_LOOKUP] Query: '{query[:200]}', extracted well: '{q_well}', normalized: '{q_well_n}'")
+            logger.info(f"[SECTION_LOOKUP] Query: '{query[:200]}', extracted well: '{q_well}', normalized: '{q_well_n}'")
 
         # Heuristic: prefer headings that contain requested keyword + well if present
         keywords = ["summary", "introduction", "conclusion", "results", "discussion", "abstract"]
@@ -399,29 +411,38 @@ class SectionLookupTool:
                 
                 logger.info(f"[SECTION_LOOKUP] Fallback search: checked {sections_checked} sections, rejected {sections_rejected}, best_score: {best_score}")
         
-        if best_i is None or best_score < 10.0:
-            if q_well and query_well_num:
-                logger.warning(f"[SECTION_LOOKUP] No matching section found for well {q_well} (well_num: {query_well_num}). Checked {sections_checked} sections, rejected {sections_rejected} for well mismatch. This likely means no sections exist for this well in the index.")
-            else:
-                logger.warning(f"[SECTION_LOOKUP] No matching section found for query: '{query[:200]}' (best_score: {best_score}, well extraction: q_well={q_well}, query_well_num={query_well_num})")
-            return "[SECTION] No matching section heading found for query."
+            if best_i is None or best_score < 10.0:
+                if q_well and query_well_num:
+                    logger.warning(f"[SECTION_LOOKUP] No matching section found for well {q_well} (well_num: {query_well_num}). Checked {sections_checked} sections, rejected {sections_rejected} for well mismatch. This likely means no sections exist for this well in the index.")
+                else:
+                    logger.warning(f"[SECTION_LOOKUP] No matching section found for query: '{query[:200]}' (best_score: {best_score}, well extraction: q_well={q_well}, query_well_num={query_well_num})")
+                return Result.ok("[SECTION] No matching section heading found for query.")
 
-        e = self._entries[best_i]
-        pages = ""
-        if e.start_page is not None and e.end_page is not None:
-            pages = f" (pages {e.start_page}-{e.end_page})"
-        logger.info(f"[SECTION_LOOKUP] Found matching section: '{e.heading[:100]}' from source: {e.source}")
-        return (
-            f"[SECTION] {e.heading}\n"
-            f"Source: {e.source}{pages}\n\n"
-            f"{e.text}"
-        )
+            e = self._entries[best_i]
+            pages = ""
+            if e.start_page is not None and e.end_page is not None:
+                pages = f" (pages {e.start_page}-{e.end_page})"
+            logger.info(f"[SECTION_LOOKUP] Found matching section: '{e.heading[:100]}' from source: {e.source}")
+            result_text = (
+                f"[SECTION] {e.heading}\n"
+                f"Source: {e.source}{pages}\n\n"
+                f"{e.text}"
+            )
+            return Result.ok(result_text)
+        except Exception as e:
+            logger.error(f"[SECTION_LOOKUP] Error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
 
     def get_tool(self):
+        @tool_wrapper
+        def lookup_section_internal(query: str) -> Result[str, AppError]:
+            """Deterministically find a report section by heading (avoids TOC dotted-leader matches)."""
+            return self.lookup(query)
+        
         @tool
         def lookup_section(query: str) -> str:
             """Deterministically find a report section by heading (avoids TOC dotted-leader matches)."""
-            return self.lookup(query)
+            return lookup_section_internal(query)
 
         return lookup_section
 

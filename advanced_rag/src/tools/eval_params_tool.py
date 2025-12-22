@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
+from ..core.result import Result, AppError, ErrorType
+from ..core.tool_adapter import tool_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -256,42 +258,65 @@ class EvalParamsTool:
         )
         logger.info(f"[OK] Wrote eval params cache with {len(rows)} tables to {out}")
 
-    def lookup(self, query: str) -> str:
-        ql = query.lower()
-        well = _extract_well(query)
-        if not well:
-            return "[EVAL_PARAMS_JSON] " + json.dumps(
-                {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-5."},
-                ensure_ascii=False,
-            )
+    def lookup(self, query: str) -> Result[str, AppError]:
+        """
+        Lookup evaluation parameters for a well.
+        
+        Args:
+            query: Query string containing well name
+            
+        Returns:
+            Result containing JSON string with evaluation parameters or error
+        """
+        try:
+            ql = query.lower()
+            well = _extract_well(query)
+            if not well:
+                return Result.err(AppError(
+                    type=ErrorType.VALIDATION_ERROR,
+                    message="No well detected. Provide a well like 15/9-F-5.",
+                    details={"query": query, "error_code": "no_well_detected"}
+                ))
 
-        tables = self._by_well.get(_norm_well_key(well), [])
-        if not tables:
-            return "[EVAL_PARAMS_JSON] " + json.dumps(
-                {"error": "no_table_for_well", "well": well, "message": f"No evaluation-parameters table found for well {well}."},
-                ensure_ascii=False,
-            )
+            tables = self._by_well.get(_norm_well_key(well), [])
+            if not tables:
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No evaluation-parameters table found for well {well}.",
+                    details={"well": well, "error_code": "no_table_for_well"}
+                ))
 
-        # Take first table (usually unique per well)
-        t = tables[0]
+            # Take first table (usually unique per well)
+            t = tables[0]
 
-        payload = {
-            "well": t.well,
-            "formations": t.formations,
-            "params": t.params,  # raw strings (may include "*")
-            "notes": t.notes,  # raw strings (may include misspellings)
-            "source": t.source,
-            # Page in cache is 0-based; expose 1-based for humans/UX
-            "page_start": t.page + 1,
-            "page_end": t.page + 1,
-        }
-        return "[EVAL_PARAMS_JSON] " + json.dumps(payload, ensure_ascii=False)
+            payload = {
+                "well": t.well,
+                "formations": t.formations,
+                "params": t.params,  # raw strings (may include "*")
+                "notes": t.notes,  # raw strings (may include misspellings)
+                "source": t.source,
+                # Page in cache is 0-based; expose 1-based for humans/UX
+                "page_start": t.page + 1,
+                "page_end": t.page + 1,
+            }
+            result_str = "[EVAL_PARAMS_JSON] " + json.dumps(payload, ensure_ascii=False)
+            return Result.ok(result_str)
+        except Exception as e:
+            logger.error(f"[EVAL_PARAMS] Error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
 
     def get_tool(self):
+        # Create a function that returns Result, then wrap it with tool_wrapper to convert to str
+        @tool_wrapper
+        def lookup_evaluation_parameters_internal(query: str) -> Result[str, AppError]:
+            """Lookup evaluation parameters table (Rhoma/Rhofl/GRmin/GRmax/Archie a,n,m, etc.) for a given well."""
+            return self.lookup(query)
+        
+        # Wrap with @tool to make it a LangChain tool (tool_wrapper already converted Result to str)
         @tool
         def lookup_evaluation_parameters(query: str) -> str:
             """Lookup evaluation parameters table (Rhoma/Rhofl/GRmin/GRmax/Archie a,n,m, etc.) for a given well."""
-            return self.lookup(query)
+            return lookup_evaluation_parameters_internal(query)
 
         return lookup_evaluation_parameters
 
