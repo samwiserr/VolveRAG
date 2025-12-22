@@ -14,24 +14,25 @@ def result_to_string(result: Result[str, AppError], default_error: str = "An err
     """
     Convert Result to string for LangChain tool compatibility.
     
+    Sanitizes error messages to remove sensitive information (file paths, secrets)
+    before returning to users.
+    
     Args:
         result: Result containing string or error
         default_error: Default error message if result is error
         
     Returns:
-        String value or formatted error message
+        String value or formatted error message (sanitized)
     """
     if result.is_ok():
         return result.unwrap()
     else:
         error = result.error()
-        # Format error as JSON for structured tools
-        error_dict = {
-            "error": error.type.value,
-            "message": error.message,
-        }
-        if error.details:
-            error_dict["details"] = error.details
+        # Use sanitized user-facing error information
+        # Maintain backward compatibility with "error" key for existing tests
+        error_dict = error.to_user_dict()
+        # Add "error" key for backward compatibility
+        error_dict["error"] = error_dict["type"]
         
         import json
         return json.dumps(error_dict, ensure_ascii=False)

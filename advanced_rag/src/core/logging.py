@@ -166,6 +166,28 @@ def log_with_context(
     logger.log(level, message, extra=extra)
 
 
+def log_error_with_context(
+    logger: logging.Logger,
+    message: str,
+    error: Exception,
+    **context: Any
+) -> None:
+    """
+    Log error with structured context and exception information.
+    
+    This helper function ensures all errors are logged with proper context
+    and exception information for better debugging.
+    
+    Args:
+        logger: Logger instance
+        message: Error message
+        error: Exception that occurred
+        **context: Additional context as keyword arguments (e.g., query, well, formation)
+    """
+    extra = {"context": context}
+    logger.error(message, exc_info=error, extra=extra)
+
+
 def get_logger(name: str) -> logging.Logger:
     """
     Get logger instance with proper configuration.

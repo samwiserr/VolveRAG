@@ -3,7 +3,7 @@ Core module for VolveRAG - provides foundational utilities for error handling,
 configuration, logging, and path resolution.
 """
 
-from .result import Result, AppError, ErrorType
+from .result import Result, AppError, ErrorType, sanitize_error_message
 from .exceptions import (
     VolveRAGError,
     ValidationError,
@@ -17,7 +17,7 @@ from .exceptions import (
 from .compat import get_env, unwrap_result
 from .config import get_config, reload_config, reset_config, AppConfig
 from .path_resolver import PathResolver
-from .logging import setup_logging, get_logger, log_with_context
+from .logging import setup_logging, get_logger, log_with_context, log_error_with_context, log_error_with_context
 from .container import ServiceContainer, get_container, reset_container
 from .well_utils import extract_well, normalize_well, canonicalize_well, strip_well_suffixes, match_well_fuzzy
 from .validation import QueryRequest, WellNameRequest, FormationRequest, validate_query
@@ -87,4 +87,6 @@ __all__ = [
     "get_rate_limiter",
     "rate_limit",
     "sanitize_input",
+    "sanitize_error_message",
+    "log_error_with_context",
 ]

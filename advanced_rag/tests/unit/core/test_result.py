@@ -2,7 +2,7 @@
 Unit tests for Result monad.
 """
 import pytest
-from src.core.result import Result, AppError, ErrorType
+from src.core.result import Result, AppError, ErrorType, sanitize_error_message
 
 
 @pytest.mark.unit
@@ -143,4 +143,90 @@ class TestAppError:
         assert "[validation_error]" in error_str
         assert "Invalid input" in error_str
         assert "context" in error_str
+    
+    def test_error_to_user_dict(self):
+        """Test error serialization for user-facing responses (sanitized)."""
+        error = AppError(
+            type=ErrorType.PROCESSING_ERROR,
+            message="Error in C:\\Users\\test\\file.py: Invalid operation",
+            details={"path": "C:\\Users\\test\\file.py", "api_key": "sk-1234567890abcdef"}
+        )
+        user_dict = error.to_user_dict()
+        assert user_dict["type"] == "processing_error"
+        assert "[FILE_PATH]" in user_dict["message"]
+        assert "C:\\Users" not in user_dict["message"]
+        assert "[FILE_PATH]" in user_dict["details"]["path"]
+        assert "[API_KEY]" in user_dict["details"]["api_key"]
+    
+    def test_error_get_user_message(self):
+        """Test getting sanitized user-facing error message."""
+        error = AppError(
+            type=ErrorType.PROCESSING_ERROR,
+            message="Error in /home/user/file.py: Invalid operation"
+        )
+        user_message = error.get_user_message()
+        assert "[FILE_PATH]" in user_message
+        assert "/home/user" not in user_message
+
+
+@pytest.mark.unit
+class TestErrorSanitization:
+    """Test error message sanitization."""
+    
+    def test_sanitize_removes_file_paths_windows(self):
+        """Test sanitization removes Windows file paths."""
+        message = "Error in C:\\Users\\test\\file.py: Invalid operation"
+        sanitized = sanitize_error_message(message)
+        assert "[FILE_PATH]" in sanitized
+        assert "C:\\Users" not in sanitized
+    
+    def test_sanitize_removes_file_paths_unix(self):
+        """Test sanitization removes Unix file paths."""
+        message = "Error in /home/user/file.py: Invalid operation"
+        sanitized = sanitize_error_message(message)
+        assert "[FILE_PATH]" in sanitized
+        assert "/home/user" not in sanitized
+    
+    def test_sanitize_removes_api_keys(self):
+        """Test sanitization removes API keys."""
+        message = "API key sk-1234567890abcdef is invalid"
+        sanitized = sanitize_error_message(message)
+        assert "[API_KEY]" in sanitized
+        assert "sk-1234567890abcdef" not in sanitized
+    
+    def test_sanitize_removes_secrets(self):
+        """Test sanitization removes secrets."""
+        message = "api_key=secret123 password=pass456"
+        sanitized = sanitize_error_message(message)
+        assert "[REDACTED]" in sanitized
+        assert "secret123" not in sanitized
+        assert "pass456" not in sanitized
+    
+    def test_sanitize_removes_email_addresses(self):
+        """Test sanitization removes email addresses."""
+        message = "Contact admin@example.com for help"
+        sanitized = sanitize_error_message(message)
+        assert "[EMAIL]" in sanitized
+        assert "admin@example.com" not in sanitized
+    
+    def test_sanitize_removes_stack_traces(self):
+        """Test sanitization removes stack traces."""
+        message = "Traceback (most recent call last):\n  File \"test.py\", line 1"
+        sanitized = sanitize_error_message(message)
+        assert "[STACK_TRACE]" in sanitized
+        assert "Traceback" not in sanitized
+    
+    def test_sanitize_preserves_safe_messages(self):
+        """Test sanitization preserves safe error messages."""
+        message = "Invalid input: query is too long"
+        sanitized = sanitize_error_message(message)
+        assert sanitized == message
+    
+    def test_sanitize_handles_empty_string(self):
+        """Test sanitization handles empty strings."""
+        assert sanitize_error_message("") == ""
+    
+    def test_sanitize_handles_none(self):
+        """Test sanitization handles None."""
+        assert sanitize_error_message(None) == ""
 

@@ -5,9 +5,11 @@ This module provides a Result type that represents either a success value (Ok)
 or an error (Err), following functional programming patterns. This eliminates
 the need for bare exception handling and provides explicit error propagation.
 """
+import re
 from typing import TypeVar, Generic, Optional, Callable, Union, Any
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 T = TypeVar('T')
 U = TypeVar('U')
@@ -25,6 +27,60 @@ class ErrorType(Enum):
     CACHE_ERROR = "cache_error"
     RETRIEVAL_ERROR = "retrieval_error"
     LLM_ERROR = "llm_error"
+
+
+def sanitize_error_message(message: Optional[str]) -> str:
+    """
+    Sanitize error message to remove sensitive information.
+    
+    Removes:
+    - File paths (absolute and relative)
+    - API keys and secrets (common patterns)
+    - Stack traces
+    - Internal file system paths
+    
+    Args:
+        message: Original error message (can be None)
+        
+    Returns:
+        Sanitized error message safe for user display
+    """
+    if message is None:
+        return ""
+    if not message:
+        return message
+    
+    sanitized = message
+    
+    # Remove absolute file paths (Windows and Unix)
+    # Pattern: C:\path\to\file or /path/to/file
+    sanitized = re.sub(r'[A-Z]:\\[^\s]+', '[FILE_PATH]', sanitized)
+    sanitized = re.sub(r'/[^\s]+', '[FILE_PATH]', sanitized)
+    
+    # Remove relative paths with ../
+    sanitized = re.sub(r'\.\./[^\s]+', '[FILE_PATH]', sanitized)
+    sanitized = re.sub(r'\.\\[^\s]+', '[FILE_PATH]', sanitized)
+    
+    # Remove API keys and secrets (common patterns)
+    # Pattern: sk-... (OpenAI keys are typically 20+ chars after sk-)
+    sanitized = re.sub(r'sk-[a-zA-Z0-9]{10,}', '[API_KEY]', sanitized)
+    sanitized = re.sub(r'api[_-]?key\s*[:=]\s*[^\s]+', 'api_key=[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'password\s*[:=]\s*[^\s]+', 'password=[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'secret\s*[:=]\s*[^\s]+', 'secret=[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'token\s*[:=]\s*[^\s]+', 'token=[REDACTED]', sanitized, flags=re.IGNORECASE)
+    
+    # Remove email addresses (may contain sensitive info)
+    sanitized = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL]', sanitized)
+    
+    # Remove stack trace indicators
+    sanitized = re.sub(r'Traceback \(most recent call last\):.*', '[STACK_TRACE]', sanitized, flags=re.DOTALL)
+    sanitized = re.sub(r'File "[^"]+", line \d+.*', '[STACK_TRACE]', sanitized)
+    
+    # Remove common internal paths
+    sanitized = re.sub(r'C:\\Users\\[^\\]+', '[USER_HOME]', sanitized)
+    sanitized = re.sub(r'/home/[^/]+', '[USER_HOME]', sanitized)
+    
+    return sanitized
 
 
 @dataclass(frozen=True)
@@ -58,6 +114,37 @@ class AppError:
         if self.original_error:
             result["original_error"] = str(self.original_error)
         return result
+    
+    def to_user_dict(self) -> dict:
+        """
+        Serialize error for user-facing responses (sanitized).
+        
+        Returns:
+            Dictionary with sanitized error information safe for user display
+        """
+        result = {
+            "type": self.type.value,
+            "message": sanitize_error_message(self.message),
+        }
+        # Include sanitized details if present
+        if self.details:
+            sanitized_details = {}
+            for key, value in self.details.items():
+                if isinstance(value, str):
+                    sanitized_details[key] = sanitize_error_message(value)
+                else:
+                    sanitized_details[key] = value
+            result["details"] = sanitized_details
+        return result
+    
+    def get_user_message(self) -> str:
+        """
+        Get sanitized user-facing error message.
+        
+        Returns:
+            Sanitized error message safe for user display
+        """
+        return sanitize_error_message(self.message)
     
     def __str__(self) -> str:
         """String representation for logging."""
