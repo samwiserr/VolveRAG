@@ -1350,12 +1350,107 @@ def generate_answer(state: MessagesState):
     response = _get_response_model().invoke([{"role": "user", "content": prompt}])
     
     # Phase 1.5: Extract source citations with page numbers from context
-    # Parse citations from context (format: [Source: path (page X)] or [Source: path (pages X-Y)])
+    # FIRST: Extract from structured JSON payloads (PETRO_PARAMS_JSON, EVAL_PARAMS_JSON, etc.)
     citations = []
+    
+    # Extract citations from structured JSON payloads
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and isinstance(msg.content, str):
+            # Extract from PETRO_PARAMS_JSON
+            if msg.content.startswith("[PETRO_PARAMS_JSON]"):
+                import json
+                try:
+                    raw = msg.content[len("[PETRO_PARAMS_JSON]"):].strip()
+                    payload = json.loads(raw)
+                    sources = payload.get("sources", [])
+                    if isinstance(sources, list) and sources:
+                        for s in sources:
+                            if isinstance(s, dict):
+                                src = s.get("source", "")
+                                ps = s.get("page_start")
+                                pe = s.get("page_end")
+                                if src and src != "N/A":
+                                    # Normalize path (handle backslashes)
+                                    src_normalized = src.replace('\\', '/')
+                                    if isinstance(ps, int) and isinstance(pe, int):
+                                        if ps == pe:
+                                            citation = f"Source: {src_normalized} (page {ps})"
+                                        else:
+                                            citation = f"Source: {src_normalized} (pages {ps}-{pe})"
+                                    elif isinstance(ps, int):
+                                        citation = f"Source: {src_normalized} (page {ps})"
+                                    else:
+                                        citation = f"Source: {src_normalized}"
+                                    if citation not in citations:
+                                        citations.append(citation)
+                                        logger.debug(f"[ANSWER] Extracted citation from PETRO_PARAMS_JSON: {citation}")
+                except Exception as e:
+                    logger.warning(f"[ANSWER] Failed to extract citations from PETRO_PARAMS_JSON: {e}")
+            
+            # Extract from EVAL_PARAMS_JSON
+            elif msg.content.startswith("[EVAL_PARAMS_JSON]"):
+                import json
+                try:
+                    raw = msg.content[len("[EVAL_PARAMS_JSON]"):].strip()
+                    payload = json.loads(raw)
+                    source = payload.get("source", "")
+                    ps = payload.get("page_start")
+                    pe = payload.get("page_end")
+                    if source and source != "N/A":
+                        source_normalized = source.replace('\\', '/')
+                        if isinstance(ps, int) and isinstance(pe, int):
+                            if ps == pe:
+                                citation = f"Source: {source_normalized} (page {ps})"
+                            else:
+                                citation = f"Source: {source_normalized} (pages {ps}-{pe})"
+                        elif isinstance(ps, int):
+                            citation = f"Source: {source_normalized} (page {ps})"
+                        else:
+                            citation = f"Source: {source_normalized}"
+                        if citation not in citations:
+                            citations.append(citation)
+                            logger.debug(f"[ANSWER] Extracted citation from EVAL_PARAMS_JSON: {citation}")
+                except Exception as e:
+                    logger.warning(f"[ANSWER] Failed to extract citations from EVAL_PARAMS_JSON: {e}")
+            
+            # Extract from FACTS_JSON
+            elif msg.content.startswith("[FACTS_JSON]"):
+                import json
+                try:
+                    raw = msg.content[len("[FACTS_JSON]"):].strip()
+                    payload = json.loads(raw)
+                    matches = payload.get("matches", [])
+                    if isinstance(matches, list):
+                        for match in matches:
+                            if isinstance(match, dict):
+                                src = match.get("source", "")
+                                ps = match.get("page_start")
+                                pe = match.get("page_end")
+                                if src and src != "N/A":
+                                    src_normalized = src.replace('\\', '/')
+                                    if isinstance(ps, int) and isinstance(pe, int):
+                                        if ps == pe:
+                                            citation = f"Source: {src_normalized} (page {ps})"
+                                        else:
+                                            citation = f"Source: {src_normalized} (pages {ps}-{pe})"
+                                    elif isinstance(ps, int):
+                                        citation = f"Source: {src_normalized} (page {ps})"
+                                    else:
+                                        citation = f"Source: {src_normalized}"
+                                    if citation not in citations:
+                                        citations.append(citation)
+                                        logger.debug(f"[ANSWER] Extracted citation from FACTS_JSON: {citation}")
+                except Exception as e:
+                    logger.warning(f"[ANSWER] Failed to extract citations from FACTS_JSON: {e}")
+    
+    # THEN: Extract citations from [Source: ...] format in tool messages and context
     citation_pattern = r'\[Source:\s*([^\]]+?)\s*(?:\(page\s+(\d+)\)|\(pages\s+(\d+)\s*-\s*(\d+)\))?\]'
     
     for msg in messages:
         if isinstance(msg, ToolMessage) and isinstance(msg.content, str):
+            # Skip JSON payloads (already processed above)
+            if msg.content.startswith(("[PETRO_PARAMS_JSON]", "[EVAL_PARAMS_JSON]", "[FACTS_JSON]")):
+                continue
             # Extract citations from tool message content
             matches = re.findall(citation_pattern, msg.content)
             for match in matches:
