@@ -8,11 +8,33 @@ from src.core.config import (
     AppConfig,
     get_config,
     reload_config,
+    reset_config,
     EmbeddingModel,
     LLMModel,
     LogLevel,
 )
 from src.core.exceptions import ConfigurationError
+
+
+@pytest.fixture(autouse=True)
+def reset_config_between_tests():
+    """Reset configuration singleton before and after each test."""
+    reset_config()
+    yield
+    reset_config()
+    # Clear any test-specific environment variables
+    test_env_vars = [
+        "OPENAI_MODEL", "OPENAI_GRADE_MODEL", "RAG_RERANK_MODEL",
+        "RAG_DECOMPOSITION_MODEL", "RAG_ENTITY_RESOLVER_MODEL",
+        "CHUNK_SIZE", "CHUNK_OVERLAP", "LOG_FORMAT", "LOG_LEVEL",
+        "VECTORSTORE_PATH", "DOCUMENTS_PATH"
+    ]
+    for var in test_env_vars:
+        if var in os.environ:
+            # Only clear if it was set by a test (not a real env var)
+            # We can't easily detect this, so we'll just clear test-specific ones
+            # In CI, these shouldn't be set anyway
+            os.environ.pop(var, None)
 
 
 @pytest.mark.unit
@@ -52,9 +74,11 @@ class TestAppConfig:
         monkeypatch.setenv("CHUNK_OVERLAP", "450")  # Invalid: > chunk_size
         
         # reload_config() calls get_config() internally, so exception is raised there
-        # We need to catch it during reload_config(), not get_config()
         with pytest.raises(ConfigurationError, match="chunk_overlap must be less than chunk_size"):
             reload_config()
+        
+        # Ensure config is reset after validation failure
+        reset_config()
     
     def test_config_validates_log_format(self, monkeypatch):
         """Test config validates log_format."""
@@ -62,9 +86,11 @@ class TestAppConfig:
         monkeypatch.setenv("LOG_FORMAT", "invalid")  # Invalid format
         
         # reload_config() calls get_config() internally, so exception is raised there
-        # We need to catch it during reload_config(), not get_config()
         with pytest.raises(ConfigurationError, match="log_format must be 'json' or 'text'"):
             reload_config()
+        
+        # Ensure config is reset after validation failure
+        reset_config()
     
     def test_config_path_resolution(self, monkeypatch, tmp_path):
         """Test config resolves paths correctly."""
@@ -94,8 +120,10 @@ class TestAppConfig:
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.setenv("LOG_LEVEL", "INVALID_LEVEL")
         
-        reload_config()
-        # Pydantic will raise ValidationError for invalid enum
-        with pytest.raises((ConfigurationError, ValueError)):
-            get_config()
+        # reload_config() will raise ConfigurationError when validation fails
+        with pytest.raises(ConfigurationError):
+            reload_config()
+        
+        # Ensure config is reset after validation failure
+        reset_config()
 

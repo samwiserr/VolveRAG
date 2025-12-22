@@ -15,7 +15,7 @@ from .exceptions import (
     ConfigurationError,
 )
 from .compat import get_env, unwrap_result
-from .config import get_config, reload_config, AppConfig
+from .config import get_config, reload_config, reset_config, AppConfig
 from .path_resolver import PathResolver
 from .logging import setup_logging, get_logger, log_with_context
 from .container import ServiceContainer, get_container, reset_container
@@ -51,6 +51,7 @@ __all__ = [
     "unwrap_result",
     "get_config",
     "reload_config",
+    "reset_config",
     "AppConfig",
     "PathResolver",
     "setup_logging",

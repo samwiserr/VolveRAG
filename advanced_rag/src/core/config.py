@@ -358,8 +358,27 @@ def reload_config() -> AppConfig:
     
     Returns:
         New AppConfig instance
+        
+    Raises:
+        ConfigurationError: If configuration validation fails
     """
     global _config
     _config = None
-    return get_config()
+    try:
+        return get_config()
+    except ConfigurationError:
+        # Ensure _config is None on validation failure to prevent bad state
+        _config = None
+        raise
+
+
+def reset_config():
+    """
+    Reset configuration singleton (useful for testing).
+    
+    This clears the cached configuration without attempting to reload it.
+    Use this in test teardown to ensure clean state.
+    """
+    global _config
+    _config = None
 
