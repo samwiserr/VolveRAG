@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "volverag"
+version = "1.0.0"
+description = "A state-of-the-art RAG system for querying Volve petrophysical reports"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "samwiserr", email = ""}
+]
+keywords = ["rag", "petrophysics", "langchain", "langgraph", "openai", "streamlit"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "hypothesis>=6.92.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/samwiserr/volverag"
+Documentation = "https://github.com/samwiserr/volverag/blob/main/advanced_rag/README.md"
+Repository = "https://github.com/samwiserr/volverag"
+Issues = "https://github.com/samwiserr/volverag/issues"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.json"]
+
