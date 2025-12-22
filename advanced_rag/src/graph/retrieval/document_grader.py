@@ -117,11 +117,26 @@ class DocumentGrader:
                 logger.info("[GRADE] Quick check: Partial sentence query with substantial context - marking as relevant")
                 return Result.ok("generate_answer")
             
-            # Use LLM for final grading
+            # Use LLM for final grading (with caching)
             prompt = GRADE_PROMPT.format(question=question, context=context[:3000])
-            response = self._get_grader_model().with_structured_output(GradeDocuments).invoke(
-                [{"role": "user", "content": prompt}]
-            )
+            
+            # Generate cache key for this grading operation
+            from src.core.cache import get_llm_cache, generate_cache_key
+            cache = get_llm_cache()
+            cache_key = f"grade_documents:{generate_cache_key(question, context[:3000])}"
+            
+            # Try cache first
+            cached_response = cache.get(cache_key)
+            if cached_response is not None:
+                logger.debug("[GRADE] Cache HIT for document grading")
+                response = cached_response
+            else:
+                logger.debug("[GRADE] Cache MISS for document grading")
+                response = self._get_grader_model().with_structured_output(GradeDocuments).invoke(
+                    [{"role": "user", "content": prompt}]
+                )
+                # Cache the response
+                cache.set(cache_key, response)
             score = response.binary_score
             
             if score == "yes":

@@ -1250,7 +1250,44 @@ def main():
         # Chat input
         user_input = st.chat_input("Ask a question (typos ok).")
         if user_input and user_input.strip():
-            st.session_state.messages.append({"role": "user", "content": user_input.strip()})
+            # Input validation and sanitization
+            from src.core.validation import validate_query
+            from src.core.security import sanitize_input, get_rate_limiter
+            from src.core.result import unwrap_result
+            
+            # Validate query
+            is_valid, error_msg = validate_query(user_input)
+            if not is_valid:
+                st.error(f"⚠️ **Invalid query:** {error_msg}")
+                st.info("Please ensure your query is between 1 and 2000 characters and doesn't contain dangerous patterns.")
+                return
+            
+            # Sanitize input
+            sanitize_result = sanitize_input(user_input)
+            if sanitize_result.is_err():
+                st.error(f"⚠️ **Input sanitization failed:** {sanitize_result.error().message}")
+                return
+            
+            from src.core.compat import unwrap_result
+            sanitized_input = unwrap_result(sanitize_result)
+            
+            # Rate limiting (use session ID as identifier)
+            session_id = st.session_state.get("session_id", "default")
+            if "session_id" not in st.session_state:
+                import uuid
+                st.session_state.session_id = str(uuid.uuid4())
+                session_id = st.session_state.session_id
+            
+            rate_limiter = get_rate_limiter()
+            rate_check = rate_limiter.check_rate_limit(session_id)
+            if rate_check.is_err():
+                error = rate_check.error()
+                st.warning(f"⚠️ **Rate limit exceeded:** {error.message}")
+                remaining = rate_limiter.get_remaining(session_id)
+                st.info(f"You have {remaining} requests remaining. Please wait a moment before trying again.")
+                return
+            
+            st.session_state.messages.append({"role": "user", "content": sanitized_input})
             with st.spinner("Thinking..."):
                 result = graph.invoke({"messages": st.session_state.messages})
                 answer = result["messages"][-1].content

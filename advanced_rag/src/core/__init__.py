@@ -23,6 +23,8 @@ from .well_utils import extract_well, normalize_well, canonicalize_well, strip_w
 from .validation import QueryRequest, WellNameRequest, FormationRequest, validate_query
 from .thresholds import MatchingThresholds, RetrievalThresholds, get_matching_thresholds, get_retrieval_thresholds
 from .tool_adapter import result_to_string, tool_wrapper
+from .cache import Cache, get_llm_cache, get_embedding_cache, cached, generate_cache_key
+from .security import RateLimiter, TokenBucket, get_rate_limiter, rate_limit, sanitize_input
 
 # Initialize logging on import (but only if not already configured)
 try:
@@ -72,4 +74,14 @@ __all__ = [
     "get_retrieval_thresholds",
     "result_to_string",
     "tool_wrapper",
+    "Cache",
+    "get_llm_cache",
+    "get_embedding_cache",
+    "cached",
+    "generate_cache_key",
+    "RateLimiter",
+    "TokenBucket",
+    "get_rate_limiter",
+    "rate_limit",
+    "sanitize_input",
 ]

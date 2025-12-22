@@ -59,7 +59,22 @@ class QueryRewriter:
             context = messages[-1].content if messages else ""
             
             prompt = REWRITE_PROMPT.format(question=question, context=context)
-            response = self._get_response_model().invoke([{"role": "user", "content": prompt}])
+            
+            # Use caching for query rewriting
+            from src.core.cache import get_llm_cache, generate_cache_key
+            cache = get_llm_cache()
+            cache_key = f"rewrite_question:{generate_cache_key(question, context)}"
+            
+            # Try cache first
+            cached_response = cache.get(cache_key)
+            if cached_response is not None:
+                logger.debug("[REWRITE] Cache HIT for query rewriting")
+                response = cached_response
+            else:
+                logger.debug("[REWRITE] Cache MISS for query rewriting")
+                response = self._get_response_model().invoke([{"role": "user", "content": prompt}])
+                # Cache the response
+                cache.set(cache_key, response)
             
             logger.info(f"[REWRITE] Original: {question}")
             logger.info(f"[REWRITE] Rewritten: {response.content}")
