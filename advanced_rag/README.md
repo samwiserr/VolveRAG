@@ -373,8 +373,55 @@ See [LICENSE](../LICENSE) file for details.
 
 For questions or issues, please open an issue on GitHub.
 
+## 🧪 Testing
+
+VolveRAG includes comprehensive testing:
+
+### Running Tests
+
+```bash
+# All tests
+pytest
+
+# Unit tests only (fast)
+pytest tests/unit -m unit
+
+# Integration tests
+pytest tests/integration -m integration
+
+# Property-based tests (Hypothesis)
+pytest tests/property -m property
+
+# Performance tests
+pytest tests/performance -m performance
+
+# With coverage
+pytest --cov=src --cov-report=html
+```
+
+### Test Markers
+
+- `@pytest.mark.unit`: Fast unit tests
+- `@pytest.mark.integration`: Integration tests
+- `@pytest.mark.property`: Property-based tests
+- `@pytest.mark.performance`: Performance tests
+- `@pytest.mark.requires_api`: Needs API keys
+- `@pytest.mark.requires_data`: Needs dataset
+- `@pytest.mark.requires_vectorstore`: Needs built vectorstore
+- `@pytest.mark.slow`: Slow-running tests
+
+## 📚 Documentation
+
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - System architecture and design
+- **[Migration Guide](docs/MIGRATION.md)** - Migrating to new architecture
+- **[Setup Guide](SETUP.md)** - Detailed installation instructions
+- **[Enhancement Plan](ENHANCEMENT_PLAN.md)** - Roadmap and features
+- **[Verification](VERIFICATION.md)** - System verification report
+
 ## 🔗 Links
 
 - [Setup Guide](SETUP.md) - Detailed installation instructions
+- [Architecture Guide](docs/ARCHITECTURE.md) - System architecture
+- [Migration Guide](docs/MIGRATION.md) - Migration from old code
 - [Enhancement Plan](ENHANCEMENT_PLAN.md) - Roadmap and features
 - [Verification](VERIFICATION.md) - System verification report
