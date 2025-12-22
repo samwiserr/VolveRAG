@@ -140,7 +140,7 @@ class Result(Generic[T, E]):
         cls,
         exc: Exception,
         error_type: ErrorType,
-        context: Optional[dict] = None
+            context: Optional[dict] = None
     ) -> 'Result[T, AppError]':
         """
         Convert exception to Result.
@@ -153,11 +153,14 @@ class Result(Generic[T, E]):
         Returns:
             Result containing the error
         """
+        # Ensure context is always a dict, never None
+        error_context = context if context is not None else {}
+        
         return cls.err(AppError(
             type=error_type,
             message=str(exc),
             original_error=exc,
-            context=context
+            context=error_context
         ))
     
     def is_ok(self) -> bool:
