@@ -83,7 +83,6 @@ def _get_retriever_tool(persist_dir: str, embedding_model: str) -> Optional[Retr
     Returns:
         RetrieverTool instance or None if vectorstore not found
     """
-    import threading
     cache_key = f"{persist_dir}:{embedding_model}"
     
     with _retriever_tool_lock:
