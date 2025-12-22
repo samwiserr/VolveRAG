@@ -5,9 +5,9 @@ This module provides a single source of truth for all configuration,
 replacing scattered os.getenv() calls throughout the codebase.
 """
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Annotated, Union
 from enum import Enum
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator, BeforeValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 
@@ -46,6 +46,25 @@ class LLMModel(str, Enum):
         return cls.GPT_4O
 
 
+def _parse_llm_model(v: Union[str, LLMModel]) -> LLMModel:
+    """Parse LLM model from string or enum, handling case-insensitive matching."""
+    if isinstance(v, LLMModel):
+        return v
+    if isinstance(v, str):
+        # Try exact match first
+        for member in LLMModel:
+            if member.value == v:
+                return member
+        # Try case-insensitive match
+        v_lower = v.lower()
+        for member in LLMModel:
+            if member.value.lower() == v_lower:
+                return member
+        # Fallback to _missing_ handler
+        return LLMModel._missing_(v)
+    return LLMModel.GPT_4O
+
+
 class AppConfig(BaseSettings):
     """
     Application configuration with validation.
@@ -66,31 +85,12 @@ class AppConfig(BaseSettings):
         default=EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
         env="EMBEDDING_MODEL"
     )
-    llm_model: LLMModel = Field(
+    llm_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
         env="OPENAI_MODEL"
     )
     
-    @field_validator("llm_model", mode="before")
-    @classmethod
-    def validate_llm_model(cls, v):
-        """Ensure LLM model enum is parsed correctly from string/environment."""
-        if isinstance(v, str):
-            # Try exact match first
-            for member in LLMModel:
-                if member.value == v:
-                    return member
-            # Try case-insensitive match
-            v_lower = v.lower()
-            for member in LLMModel:
-                if member.value.lower() == v_lower:
-                    return member
-            # Fallback to _missing_ handler
-            return LLMModel._missing_(v)
-        # If already an enum member, return as-is
-        return v
-    
-    grade_model: LLMModel = Field(
+    grade_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
         env="OPENAI_GRADE_MODEL"
     )
@@ -146,7 +146,7 @@ class AppConfig(BaseSettings):
         default=True,
         env="RAG_RERANK"
     )
-    rerank_model: LLMModel = Field(
+    rerank_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
         env="RAG_RERANK_MODEL"
     )
@@ -176,7 +176,7 @@ class AppConfig(BaseSettings):
         default=True,
         env="RAG_ENABLE_QUERY_COMPLETION"
     )
-    decomposition_model: LLMModel = Field(
+    decomposition_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
         env="RAG_DECOMPOSITION_MODEL"
     )
@@ -245,6 +245,32 @@ class AppConfig(BaseSettings):
             return resolved.resolve()
         return path.resolve() if path.exists() else path
     
+    @model_validator(mode='before')
+    @classmethod
+    def validate_llm_models_from_env(cls, values):
+        """Parse LLM model enums from environment variables before validation."""
+        if isinstance(values, dict):
+            # Handle LLM model fields that might come as strings from env
+            llm_fields = ['llm_model', 'grade_model', 'rerank_model', 'decomposition_model', 'entity_resolver_model']
+            for field in llm_fields:
+                if field in values and isinstance(values[field], str):
+                    # Try exact match first
+                    for member in LLMModel:
+                        if member.value == values[field]:
+                            values[field] = member
+                            break
+                    else:
+                        # Try case-insensitive match
+                        v_lower = values[field].lower()
+                        for member in LLMModel:
+                            if member.value.lower() == v_lower:
+                                values[field] = member
+                                break
+                        else:
+                            # Fallback to _missing_ handler
+                            values[field] = LLMModel._missing_(values[field])
+        return values
+    
     @model_validator(mode='after')
     def validate_overlap(self):
         """Overlap must be less than chunk size."""
@@ -266,6 +292,10 @@ class AppConfig(BaseSettings):
         case_sensitive=False,
         validate_assignment=True,
         extra="ignore",  # Ignore extra fields from environment (e.g., gemini_api_key)
+        # Custom JSON encoders for enum parsing
+        json_encoders={
+            LLMModel: lambda v: v.value if isinstance(v, LLMModel) else str(v)
+        },
     )
 
 
