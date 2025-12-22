@@ -9,9 +9,13 @@ from typing import Optional
 
 import streamlit as st
 
-from .citation_parser import _clean_source_path
+from .citation_parser import _clean_source_path, _normalize_source_path
 
 logger = logging.getLogger(__name__)
+
+
+# Use the shared normalization function from citation_parser for consistency
+_normalize_pdf_path = _normalize_source_path
 
 
 def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
@@ -27,7 +31,9 @@ def _find_pdf_file(file_path: str, pdfs_dir: Path) -> Optional[Path]:
     Returns:
         Path to the PDF file if found, None otherwise
     """
-    original_path = Path(file_path)
+    # Normalize the path first
+    normalized_path = _normalize_pdf_path(file_path)
+    original_path = Path(normalized_path)
     
     # Clean up path - handle backslashes and relative paths
     path_str = str(original_path).replace('\\', '/')

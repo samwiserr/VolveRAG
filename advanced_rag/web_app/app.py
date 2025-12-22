@@ -108,22 +108,25 @@ def main():
                     cits = _parse_citations(content if isinstance(content, str) else "")
                     if cits:
                         c = cits[0]
-                        page = c.page_start
-                        cols = st.columns([0.72, 0.28])
-                        with cols[0]:
-                            # Clean up the source path for display
-                            clean_path = _clean_source_path(c.source_path)
-                            st.caption(
-                                f"`{clean_path}`"
-                                + (f" (pages {c.page_start}-{c.page_end})" if c.page_start else "")
-                            )
-                        with cols[1]:
-                            label = f"View page {page}" if page else "View"
-                            # Add idx component to avoid duplicate Streamlit keys when the same
-                            # citation repeats across reruns or messages.
-                            key_suffix = f"{len(st.session_state.messages)}_{msg_idx}_{0}_{c.source_path}_{page}"
-                            if st.button(label, key=f"view_{key_suffix}"):
-                                st.session_state.viewer = {"path": c.source_path, "page": page}
+                        # Only show citation UI if source is valid (not "N/A")
+                        if c.source_path and c.source_path != "N/A":
+                            page = c.page_start
+                            cols = st.columns([0.72, 0.28])
+                            with cols[0]:
+                                # Clean up the source path for display
+                                clean_path = _clean_source_path(c.source_path)
+                                st.caption(
+                                    f"`{clean_path}`"
+                                    + (f" (pages {c.page_start}-{c.page_end})" if c.page_start and c.page_end else 
+                                       f" (page {c.page_start})" if c.page_start else "")
+                                )
+                            with cols[1]:
+                                label = f"View page {page}" if page else "View"
+                                # Add idx component to avoid duplicate Streamlit keys when the same
+                                # citation repeats across reruns or messages.
+                                key_suffix = f"{len(st.session_state.messages)}_{msg_idx}_{0}_{c.source_path}_{page}"
+                                if st.button(label, key=f"view_{key_suffix}"):
+                                    st.session_state.viewer = {"path": c.source_path, "page": page}
 
         # Ensure vectorstore is available (download if needed)
         if not _ensure_vectorstore_available(persist_dir):
