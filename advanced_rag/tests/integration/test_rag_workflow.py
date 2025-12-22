@@ -25,21 +25,19 @@ class TestRAGWorkflow:
     @pytest.fixture
     def mock_tools(self):
         """Create mock tools for testing."""
-        tools = []
+        from langchain.tools import tool
         
-        # Mock retriever tool
-        mock_retriever = Mock()
-        mock_retriever.name = "retrieve_documents"
-        mock_retriever.description = "Retrieve relevant documents"
-        tools.append(mock_retriever)
+        @tool
+        def mock_retrieve_documents(query: str) -> str:
+            """Retrieve relevant documents."""
+            return "Mocked document retrieval result"
         
-        # Mock petro params tool
-        mock_petro = Mock()
-        mock_petro.name = "lookup_petrophysical_params"
-        mock_petro.description = "Lookup petrophysical parameters"
-        tools.append(mock_petro)
+        @tool
+        def mock_lookup_petrophysical_params(query: str) -> str:
+            """Lookup petrophysical parameters."""
+            return '{"netgros": 0.85, "phif": 0.25}'
         
-        return tools
+        return [mock_retrieve_documents, mock_lookup_petrophysical_params]
     
     @pytest.fixture
     def sample_state(self):
