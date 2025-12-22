@@ -221,10 +221,11 @@ def generate_query_or_respond(state: MessagesState, tools):
             return {"messages": [AIMessage(content="I didn't receive a valid question. Please ask a question about the Volve petrophysical reports.")]}
         
         # Edge case: Very long queries (potential abuse or copy-paste errors)
-        MAX_QUERY_LENGTH = 5000
-        if len(question) > MAX_QUERY_LENGTH:
+        from ..core.thresholds import get_retrieval_thresholds
+        thresholds = get_retrieval_thresholds()
+        if len(question) > thresholds.max_query_length:
             logger.warning(f"[ROUTING] Query too long: {len(question)} characters")
-            return {"messages": [AIMessage(content=f"Your question is too long ({len(question)} characters). Please keep questions under {MAX_QUERY_LENGTH} characters. You can break complex questions into smaller parts.")]}
+            return {"messages": [AIMessage(content=f"Your question is too long ({len(question)} characters). Please keep questions under {thresholds.max_query_length} characters. You can break complex questions into smaller parts.")]}
         
         ql = question.lower() if isinstance(question, str) else ""
         logger.info(f"[ROUTING] Initial question: '{question[:100] if isinstance(question, str) else question}', ql: '{ql[:100]}'")

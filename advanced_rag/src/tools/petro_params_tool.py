@@ -49,12 +49,14 @@ def _md5_file(p: Path) -> str:
 
 
 def _norm_well(s: str) -> str:
-    return re.sub(r"[^0-9A-Z]+", "", s.upper())
+    """Normalize well name (uses centralized utility)."""
+    from ...core.well_utils import normalize_well
+    return normalize_well(s)
 
 
 def _extract_well(text: str) -> Optional[str]:
     """Extract well name using centralized extraction function."""
-    from ..normalize.query_normalizer import extract_well
+    from ...core.well_utils import extract_well
     return extract_well(text)
 
 
@@ -288,9 +290,17 @@ class PetroParamsTool:
             logger.info(f"[PETRO_PARAMS] Normalized well: '{nwell}'")
             rows = self._by_well.get(nwell, [])
             logger.info(f"[PETRO_PARAMS] Initial lookup result: rows={len(rows) if rows else 0}, key='{nwell}'")
-        except Exception as e:
-            logger.error(f"[PETRO_PARAMS] Exception in initial matching: {e}", exc_info=True)
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error(f"[PETRO_PARAMS] Error in initial matching: {e}", exc_info=True)
             raise
+        except Exception as e:
+            # Catch-all for unexpected errors, but log with context
+            logger.error(
+                f"[PETRO_PARAMS] Unexpected error in initial matching: {e}",
+                exc_info=True,
+                extra={"query": query[:100]}
+            )
+            raise RuntimeError(f"Unexpected error processing query: {e}") from e
 
         if not rows:
             # Try normalizing like well picks (remove NO/WELL etc)
@@ -298,8 +308,12 @@ class PetroParamsTool:
             try:
                 nw2 = _norm_well_picks(well)
                 logger.info(f"[PETRO_PARAMS] Well picks norm: '{nw2}'")
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"[PETRO_PARAMS] Well picks normalization failed: {e}")
+                nw2 = None
             except Exception as e:
-                logger.info(f"[PETRO_PARAMS] Well picks normalization failed: {e}")
+                # Unexpected error in normalization - log but continue
+                logger.warning(f"[PETRO_PARAMS] Unexpected error in well picks normalization: {e}")
                 nw2 = None
             if nw2:
                 rows = self._by_well.get(nw2, [])
@@ -354,7 +368,11 @@ class PetroParamsTool:
             query_norm_picks = None
             try:
                 query_norm_picks = _norm_well_picks(well)
-            except Exception:
+            except (ValueError, AttributeError):
+                query_norm_picks = None
+            except Exception as e:
+                # Unexpected error - log but continue
+                logger.debug(f"[PETRO_PARAMS] Unexpected error in well picks normalization: {e}")
                 query_norm_picks = None
 
             logger.debug(f"[PETRO_PARAMS] Trying fuzzy matching for well '{well}' (norm_clean='{query_norm_clean}', norm_picks='{query_norm_picks}')")

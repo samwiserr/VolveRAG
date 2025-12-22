@@ -18,6 +18,11 @@ from .compat import get_env, unwrap_result
 from .config import get_config, reload_config, AppConfig
 from .path_resolver import PathResolver
 from .logging import setup_logging, get_logger, log_with_context
+from .container import ServiceContainer, get_container, reset_container
+from .well_utils import extract_well, normalize_well, canonicalize_well, strip_well_suffixes, match_well_fuzzy
+from .validation import QueryRequest, WellNameRequest, FormationRequest, validate_query
+from .thresholds import MatchingThresholds, RetrievalThresholds, get_matching_thresholds, get_retrieval_thresholds
+from .tool_adapter import result_to_string, tool_wrapper
 
 # Initialize logging on import (but only if not already configured)
 try:
@@ -49,4 +54,22 @@ __all__ = [
     "setup_logging",
     "get_logger",
     "log_with_context",
+    "ServiceContainer",
+    "get_container",
+    "reset_container",
+    "extract_well",
+    "normalize_well",
+    "canonicalize_well",
+    "strip_well_suffixes",
+    "match_well_fuzzy",
+    "QueryRequest",
+    "WellNameRequest",
+    "FormationRequest",
+    "validate_query",
+    "MatchingThresholds",
+    "RetrievalThresholds",
+    "get_matching_thresholds",
+    "get_retrieval_thresholds",
+    "result_to_string",
+    "tool_wrapper",
 ]
