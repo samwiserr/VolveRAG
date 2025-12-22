@@ -128,9 +128,8 @@ class TestLogWithContext:
     def test_logs_with_context(self, caplog):
         """Test logs message with context."""
         logger = get_logger("test")
-        
-        with log_with_context(logger, "test_action", {"key": "value"}):
-            logger.info("Test message")
+        with caplog.at_level(logging.INFO):
+            log_with_context(logger, logging.INFO, "Test message", key="value")
         
         # Verify log was created (exact format depends on setup)
         assert len(caplog.records) > 0
