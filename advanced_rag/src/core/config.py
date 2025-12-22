@@ -9,6 +9,7 @@ from typing import Optional, List, Annotated, Union
 from enum import Enum
 from pydantic import Field, field_validator, model_validator, BeforeValidator, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from .exceptions import ConfigurationError
 import os
 
 
@@ -340,7 +341,6 @@ def get_config() -> AppConfig:
             _config = AppConfig()
         except Exception as e:
             # If validation fails, provide helpful error message
-            from .exceptions import ConfigurationError
             raise ConfigurationError(
                 f"Configuration validation failed: {e}. "
                 f"Please check your environment variables and .env file."

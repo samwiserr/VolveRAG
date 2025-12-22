@@ -6,7 +6,7 @@ replacing scattered path resolution logic.
 """
 from pathlib import Path
 from typing import Optional
-from .config import get_config
+from .config import get_config, reset_config
 from .result import Result, AppError, ErrorType
 
 
@@ -31,6 +31,8 @@ class PathResolver:
         """
         if base_path:
             return Path(base_path).resolve()
+        # Always get fresh config to ensure test environment variables are respected
+        # In tests, config should be reset before calling this
         config = get_config()
         return config.persist_directory.resolve()
     

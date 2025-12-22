@@ -2,8 +2,10 @@
 Unit tests for path resolution.
 """
 import pytest
+import os
 from pathlib import Path
 from src.core.path_resolver import PathResolver
+from src.core.config import reset_config, reload_config
 from src.core.result import Result
 
 
@@ -19,11 +21,16 @@ class TestPathResolver:
         resolved = PathResolver.resolve_vectorstore(test_path)
         assert resolved == test_path.resolve()
     
-    def test_resolve_vectorstore_from_config(self, mock_config, tmp_path):
-        """Test resolve_vectorstore() uses config."""
+    def test_resolve_vectorstore_from_config(self, monkeypatch, tmp_path):
+        """Test resolve_vectorstore() uses config from environment."""
         test_path = tmp_path / "vectorstore"
         test_path.mkdir()
-        mock_config.persist_directory = test_path
+        
+        # Set environment variable and reset config to ensure fresh load
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("VECTORSTORE_PATH", str(test_path))
+        reset_config()
+        reload_config()
         
         resolved = PathResolver.resolve_vectorstore()
         assert resolved == test_path.resolve()
