@@ -98,11 +98,11 @@ class AppConfig(BaseSettings):
     # Paths
     persist_directory: Path = Field(
         default=Path("./data/vectorstore"),
-        env="VECTORSTORE_PATH"
+        validation_alias=AliasChoices("VECTORSTORE_PATH", "persist_directory")
     )
     documents_path: Optional[Path] = Field(
         default=None,
-        env="DOCUMENTS_PATH"
+        validation_alias=AliasChoices("DOCUMENTS_PATH", "documents_path")
     )
     
     # Retrieval settings
@@ -110,7 +110,7 @@ class AppConfig(BaseSettings):
         default=500,
         ge=100,
         le=2000,
-        env="CHUNK_SIZE",
+        validation_alias=AliasChoices("CHUNK_SIZE", "chunk_size"),
         description="Target tokens per chunk"
     )
     chunk_overlap: int = Field(
@@ -118,37 +118,37 @@ class AppConfig(BaseSettings):
         ge=0,
         # Note: le constraint removed - validation done in field_validator
         # to allow dynamic validation against chunk_size
-        env="CHUNK_OVERLAP",
+        validation_alias=AliasChoices("CHUNK_OVERLAP", "chunk_overlap"),
         description="Token overlap between chunks"
     )
     
     # Reranking
     use_cross_encoder: bool = Field(
         default=True,
-        env="RAG_USE_CROSS_ENCODER"
+        validation_alias=AliasChoices("RAG_USE_CROSS_ENCODER", "use_cross_encoder")
     )
     cross_encoder_model: str = Field(
         default="cross-encoder/ms-marco-MiniLM-L-6-v2",
-        env="RAG_CROSS_ENCODER_MODEL"
+        validation_alias=AliasChoices("RAG_CROSS_ENCODER_MODEL", "cross_encoder_model")
     )
     mmr_enabled: bool = Field(
         default=True,
-        env="RAG_MMR"
+        validation_alias=AliasChoices("RAG_MMR", "mmr_enabled")
     )
     mmr_lambda: float = Field(
         default=0.7,
         ge=0.0,
         le=1.0,
-        env="RAG_MMR_LAMBDA",
+        validation_alias=AliasChoices("RAG_MMR_LAMBDA", "mmr_lambda"),
         description="MMR diversification parameter (0=relevance, 1=diversity)"
     )
     rerank_enabled: bool = Field(
         default=True,
-        env="RAG_RERANK"
+        validation_alias=AliasChoices("RAG_RERANK", "rerank_enabled")
     )
     rerank_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
-        env="RAG_RERANK_MODEL"
+        validation_alias=AliasChoices("RAG_RERANK_MODEL", "rerank_model")
     )
     
     # Fuzzy matching thresholds
@@ -156,49 +156,49 @@ class AppConfig(BaseSettings):
         default=85.0,
         ge=0.0,
         le=100.0,
-        env="FORMATION_FUZZY_THRESHOLD",
+        validation_alias=AliasChoices("FORMATION_FUZZY_THRESHOLD", "formation_fuzzy_threshold"),
         description="Minimum similarity score (0-100) for formation fuzzy matching"
     )
     formation_fuzzy_margin: float = Field(
         default=10.0,
         ge=0.0,
         le=50.0,
-        env="FORMATION_FUZZY_MARGIN",
+        validation_alias=AliasChoices("FORMATION_FUZZY_MARGIN", "formation_fuzzy_margin"),
         description="Minimum margin over second-best match to accept fuzzy match"
     )
     
     # Query processing
     enable_query_decomposition: bool = Field(
         default=True,
-        env="RAG_ENABLE_QUERY_DECOMPOSITION"
+        validation_alias=AliasChoices("RAG_ENABLE_QUERY_DECOMPOSITION", "enable_query_decomposition")
     )
     enable_query_completion: bool = Field(
         default=True,
-        env="RAG_ENABLE_QUERY_COMPLETION"
+        validation_alias=AliasChoices("RAG_ENABLE_QUERY_COMPLETION", "enable_query_completion")
     )
     decomposition_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
-        env="RAG_DECOMPOSITION_MODEL"
+        validation_alias=AliasChoices("RAG_DECOMPOSITION_MODEL", "decomposition_model")
     )
     
     # Entity resolution
     enable_entity_resolver: bool = Field(
         default=True,
-        env="RAG_ENTITY_RESOLVER"
+        validation_alias=AliasChoices("RAG_ENTITY_RESOLVER", "enable_entity_resolver")
     )
-    entity_resolver_model: LLMModel = Field(
+    entity_resolver_model: Annotated[LLMModel, BeforeValidator(_parse_llm_model)] = Field(
         default=LLMModel.GPT_4O,
-        env="RAG_ENTITY_RESOLVER_MODEL"
+        validation_alias=AliasChoices("RAG_ENTITY_RESOLVER_MODEL", "entity_resolver_model")
     )
     
     # Logging
     log_level: LogLevel = Field(
         default=LogLevel.INFO,
-        env="LOG_LEVEL"
+        validation_alias=AliasChoices("LOG_LEVEL", "log_level")
     )
     log_format: str = Field(
         default="text",
-        env="LOG_FORMAT",
+        validation_alias=AliasChoices("LOG_FORMAT", "log_format"),
         description="'json' or 'text'"
     )
     
@@ -206,28 +206,28 @@ class AppConfig(BaseSettings):
     max_requests_per_minute: int = Field(
         default=60,
         ge=1,
-        env="MAX_REQUESTS_PER_MINUTE"
+        validation_alias=AliasChoices("MAX_REQUESTS_PER_MINUTE", "max_requests_per_minute")
     )
     
     # Caching
     enable_llm_cache: bool = Field(
         default=True,
-        env="ENABLE_LLM_CACHE"
+        validation_alias=AliasChoices("ENABLE_LLM_CACHE", "enable_llm_cache")
     )
     cache_ttl_seconds: int = Field(
         default=3600,
         ge=0,
-        env="CACHE_TTL_SECONDS"
+        validation_alias=AliasChoices("CACHE_TTL_SECONDS", "cache_ttl_seconds")
     )
     
     # External URLs (for Streamlit Cloud)
     vectorstore_url: Optional[str] = Field(
         default=None,
-        env="VECTORSTORE_URL"
+        validation_alias=AliasChoices("VECTORSTORE_URL", "vectorstore_url")
     )
     pdfs_url: Optional[str] = Field(
         default=None,
-        env="PDFS_URL"
+        validation_alias=AliasChoices("PDFS_URL", "pdfs_url")
     )
     
     @field_validator("persist_directory", "documents_path", mode="before")
