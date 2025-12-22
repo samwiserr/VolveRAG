@@ -152,18 +152,14 @@ class TestGenerateCacheKey:
 class TestCachedDecorator:
     """Test cached decorator."""
     
-    def test_caches_function_result(self, monkeypatch):
+    def test_caches_function_result(self):
         """Test decorator caches function results."""
-        # Enable caching for this test
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("ENABLE_LLM_CACHE", "true")
-        from src.core.config import reset_config, reload_config
-        reset_config()
-        reload_config()
+        # Use a fresh cache instance for this test to avoid interference
+        test_cache = Cache(default_ttl=3600)
         
         call_count = 0
         
-        @cached(ttl=3600)
+        @cached(ttl=3600, cache_instance=test_cache)
         def expensive_func(x: int) -> int:
             nonlocal call_count
             call_count += 1
@@ -176,18 +172,14 @@ class TestCachedDecorator:
         assert result2 == 10
         assert call_count == 1  # Function only called once
     
-    def test_cache_expires_after_ttl(self, monkeypatch):
+    def test_cache_expires_after_ttl(self):
         """Test cache expires after TTL."""
-        # Enable caching for this test
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("ENABLE_LLM_CACHE", "true")
-        from src.core.config import reset_config, reload_config
-        reset_config()
-        reload_config()
+        # Use a fresh cache instance for this test to avoid interference
+        test_cache = Cache(default_ttl=0.01)
         
         call_count = 0
         
-        @cached(ttl=0.01)  # Very short TTL
+        @cached(ttl=0.01, cache_instance=test_cache)  # Very short TTL
         def func(x: int) -> int:
             nonlocal call_count
             call_count += 1
@@ -201,18 +193,14 @@ class TestCachedDecorator:
         func(5)  # Should call again
         assert call_count == 2
     
-    def test_different_args_create_different_cache_entries(self, monkeypatch):
+    def test_different_args_create_different_cache_entries(self):
         """Test different arguments create different cache entries."""
-        # Enable caching for this test
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-        monkeypatch.setenv("ENABLE_LLM_CACHE", "true")
-        from src.core.config import reset_config, reload_config
-        reset_config()
-        reload_config()
+        # Use a fresh cache instance for this test to avoid interference
+        test_cache = Cache(default_ttl=3600)
         
         call_count = 0
         
-        @cached(ttl=3600)
+        @cached(ttl=3600, cache_instance=test_cache)
         def func(x: int) -> int:
             nonlocal call_count
             call_count += 1

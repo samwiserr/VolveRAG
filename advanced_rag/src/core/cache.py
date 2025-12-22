@@ -206,14 +206,16 @@ def cached(
         
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
-            # Check if caching is enabled
-            try:
-                config = get_config()
-                if not config.enable_llm_cache:
+            # If a specific cache instance was provided, use it directly
+            # Otherwise, check if caching is enabled in config
+            if cache_instance is None:
+                try:
+                    config = get_config()
+                    if not config.enable_llm_cache:
+                        return func(*args, **kwargs)
+                except Exception:
+                    # If config not available, skip caching
                     return func(*args, **kwargs)
-            except Exception:
-                # If config not available, skip caching
-                return func(*args, **kwargs)
             
             # Generate cache key
             if key_func:
