@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
+from ..core.result import Result, AppError, ErrorType
+from ..core.tool_adapter import tool_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -285,84 +287,106 @@ class StructuredFactsTool:
         )
         logger.info(f"[OK] Wrote facts cache with {len(rows)} rows to {out}")
 
-    def lookup(self, query: str) -> str:
-        ql = query.lower()
-        well = _extract_well(query)
-        if not well:
-            return "[FACTS_JSON] " + json.dumps(
-                {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-5."},
-                ensure_ascii=False,
-            )
+    def lookup(self, query: str) -> Result[str, AppError]:
+        """
+        Lookup structured facts for a well.
+        
+        Args:
+            query: Query string containing well name and optionally parameter name
+            
+        Returns:
+            Result containing JSON string with facts or error
+        """
+        try:
+            ql = query.lower()
+            well = _extract_well(query)
+            if not well:
+                return Result.err(AppError(
+                    type=ErrorType.VALIDATION_ERROR,
+                    message="No well detected. Provide a well like 15/9-F-5.",
+                    details={"query": query, "error_code": "no_well_detected"}
+                ))
 
-        candidates = self._by_well.get(_norm_well_key(well), [])
-        if not candidates:
-            return "[FACTS_JSON] " + json.dumps(
-                {"error": "no_facts_for_well", "well": well, "message": f"No structured facts found for well {well}."},
-                ensure_ascii=False,
-            )
+            candidates = self._by_well.get(_norm_well_key(well), [])
+            if not candidates:
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No structured facts found for well {well}.",
+                    details={"well": well, "error_code": "no_facts_for_well"}
+                ))
 
-        # Parameter match: pick the longest parameter name that appears in the query, or use synonyms.
-        synonyms = {
-            "rw": "RW",
-            "temperature gradient": "TEMPERATUREGRADIENT",
-            "reservoir temperature": "RESERVOIRTEMPERATURE",
-        }
-        qnorm = _norm_param(query)
+            # Parameter match: pick the longest parameter name that appears in the query, or use synonyms.
+            synonyms = {
+                "rw": "RW",
+                "temperature gradient": "TEMPERATUREGRADIENT",
+                "reservoir temperature": "RESERVOIRTEMPERATURE",
+            }
+            qnorm = _norm_param(query)
 
-        wanted_norm: Optional[str] = None
-        for needle, kn in synonyms.items():
-            if needle in ql:
-                wanted_norm = kn
-                break
-
-        if wanted_norm is None:
-            # Longest match among known parameter norms
-            param_norms = sorted({_norm_param(r.parameter) for r in candidates}, key=len, reverse=True)
-            for pn in param_norms:
-                if pn and pn in qnorm:
-                    wanted_norm = pn
+            wanted_norm: Optional[str] = None
+            for needle, kn in synonyms.items():
+                if needle in ql:
+                    wanted_norm = kn
                     break
 
-        # If no parameter specified, return a small preview list (top 20 unique params)
-        if wanted_norm is None:
-            uniq: Dict[str, FactRow] = {}
-            for r in candidates:
-                uniq.setdefault(_norm_param(r.parameter), r)
-            preview = list(uniq.values())[:20]
-            return "[FACTS_JSON] " + json.dumps(
-                {
-                    "well": well,
-                    "parameter": None,
-                    "matches": [asdict(r) for r in preview],
-                    "message": "No parameter detected; showing a preview of available parameters for this well.",
-                },
+            if wanted_norm is None:
+                # Longest match among known parameter norms
+                param_norms = sorted({_norm_param(r.parameter) for r in candidates}, key=len, reverse=True)
+                for pn in param_norms:
+                    if pn and pn in qnorm:
+                        wanted_norm = pn
+                        break
+
+            # If no parameter specified, return a small preview list (top 20 unique params)
+            if wanted_norm is None:
+                uniq: Dict[str, FactRow] = {}
+                for r in candidates:
+                    uniq.setdefault(_norm_param(r.parameter), r)
+                preview = list(uniq.values())[:20]
+                result_str = "[FACTS_JSON] " + json.dumps(
+                    {
+                        "well": well,
+                        "parameter": None,
+                        "matches": [asdict(r) for r in preview],
+                        "message": "No parameter detected; showing a preview of available parameters for this well.",
+                    },
+                    ensure_ascii=False,
+                )
+                return Result.ok(result_str)
+
+            matches = [r for r in candidates if _norm_param(r.parameter) == wanted_norm or wanted_norm in _norm_param(r.parameter)]
+            # Sort deterministically by source then page
+            matches.sort(key=lambda r: (r.source, r.page_start or -1, r.parameter))
+
+            # De-duplicate identical matches (common when the same page is indexed from both PDF scan and section index)
+            uniq: List[FactRow] = []
+            seen: set[tuple] = set()
+            for r in matches:
+                k = (r.parameter, r.value, r.unit, r.source, r.page_start, r.page_end)
+                if k in seen:
+                    continue
+                seen.add(k)
+                uniq.append(r)
+
+            result_str = "[FACTS_JSON] " + json.dumps(
+                {"well": well, "parameter_norm": wanted_norm, "matches": [asdict(r) for r in uniq]},
                 ensure_ascii=False,
             )
-
-        matches = [r for r in candidates if _norm_param(r.parameter) == wanted_norm or wanted_norm in _norm_param(r.parameter)]
-        # Sort deterministically by source then page
-        matches.sort(key=lambda r: (r.source, r.page_start or -1, r.parameter))
-
-        # De-duplicate identical matches (common when the same page is indexed from both PDF scan and section index)
-        uniq: List[FactRow] = []
-        seen: set[tuple] = set()
-        for r in matches:
-            k = (r.parameter, r.value, r.unit, r.source, r.page_start, r.page_end)
-            if k in seen:
-                continue
-            seen.add(k)
-            uniq.append(r)
-
-        return "[FACTS_JSON] " + json.dumps(
-            {"well": well, "parameter_norm": wanted_norm, "matches": [asdict(r) for r in uniq]},
-            ensure_ascii=False,
-        )
+            return Result.ok(result_str)
+        except Exception as e:
+            logger.error(f"[FACTS] Error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
 
     def get_tool(self):
+        @tool_wrapper
+        def lookup_structured_facts_internal(query: str) -> Result[str, AppError]:
+            """Lookup numeric facts from notes/narrative text (Rw, gradients, temperatures, cutoffs, etc.) by well and parameter."""
+            return self.lookup(query)
+        
         @tool
         def lookup_structured_facts(query: str) -> str:
             """Lookup numeric facts from notes/narrative text (Rw, gradients, temperatures, cutoffs, etc.) by well and parameter."""
-            return self.lookup(query)
+            return lookup_structured_facts_internal(query)
 
         return lookup_structured_facts
 

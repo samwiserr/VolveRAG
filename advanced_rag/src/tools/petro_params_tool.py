@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
+from ..core.result import Result, AppError, ErrorType
+from ..core.tool_adapter import tool_wrapper
 
 from .well_picks_tool import _norm_well as _norm_well_picks
 
@@ -263,24 +265,31 @@ class PetroParamsTool:
         )
         logger.info(f"[OK] Wrote petro params cache with {len(rows)} rows to {out}")
 
-    def lookup(self, query: str) -> str:
+    def lookup(self, query: str) -> Result[str, AppError]:
         """
         Return a structured payload so the graph can render:
         - a single value (param + formation)
         - a parameter row (param only)
         - a formation column (formation only)
         - full table (well only)
+        
+        Args:
+            query: Query string containing well name and optionally parameter/formation
+            
+        Returns:
+            Result containing JSON string with petrophysical parameters or error
         """
-        logger.info(f"[PETRO_PARAMS] lookup() called with query: '{query}'")
         try:
+            logger.info(f"[PETRO_PARAMS] lookup() called with query: '{query}'")
             well = _extract_well(query)
             logger.info(f"[PETRO_PARAMS] Extracted well: '{well}'")
             if not well:
                 logger.warning(f"[PETRO_PARAMS] No well detected in query: '{query}'")
-                return "[PETRO_PARAMS_JSON] " + json.dumps(
-                    {"error": "no_well_detected", "message": "No well detected. Provide a well like 15/9-F-12."},
-                    ensure_ascii=False,
-                )
+                return Result.err(AppError(
+                    type=ErrorType.VALIDATION_ERROR,
+                    message="No well detected. Provide a well like 15/9-F-12.",
+                    details={"query": query, "error_code": "no_well_detected"}
+                ))
 
             # Multi-strategy well matching (same approach as FormationPropertiesTool)
             logger.warning(f"[PETRO_PARAMS] ========== STARTING WELL MATCHING FOR '{well}' ==========")
@@ -290,285 +299,267 @@ class PetroParamsTool:
             logger.info(f"[PETRO_PARAMS] Normalized well: '{nwell}'")
             rows = self._by_well.get(nwell, [])
             logger.info(f"[PETRO_PARAMS] Initial lookup result: rows={len(rows) if rows else 0}, key='{nwell}'")
-        except (ValueError, KeyError, AttributeError) as e:
-            logger.error(f"[PETRO_PARAMS] Error in initial matching: {e}", exc_info=True)
-            raise
-        except Exception as e:
-            # Catch-all for unexpected errors, but log with context
-            logger.error(
-                f"[PETRO_PARAMS] Unexpected error in initial matching: {e}",
-                exc_info=True,
-                extra={"query": query[:100]}
-            )
-            raise RuntimeError(f"Unexpected error processing query: {e}") from e
 
-        if not rows:
-            # Try normalizing like well picks (remove NO/WELL etc)
-            logger.info(f"[PETRO_PARAMS] Trying well picks normalization...")
-            try:
-                nw2 = _norm_well_picks(well)
-                logger.info(f"[PETRO_PARAMS] Well picks norm: '{nw2}'")
-            except (ValueError, AttributeError) as e:
-                logger.debug(f"[PETRO_PARAMS] Well picks normalization failed: {e}")
-                nw2 = None
-            except Exception as e:
-                # Unexpected error in normalization - log but continue
-                logger.warning(f"[PETRO_PARAMS] Unexpected error in well picks normalization: {e}")
-                nw2 = None
-            if nw2:
-                rows = self._by_well.get(nw2, [])
-                logger.info(f"[PETRO_PARAMS] Well picks lookup result: rows={len(rows) if rows else 0}")
-
-        if not rows:
-            # Try extracting just the numeric/cleaned part
-            cleaned = well.upper().replace("WELL", "").replace("NO", "").strip()
-            nw3 = _norm_well(cleaned)
-            rows = self._by_well.get(nw3, [])
-            logger.info(f"[PETRO_PARAMS] After cleaned attempt: rows={len(rows) if rows else 0}, nw3='{nw3}'")
-        
-        # Try matching with suffixes stripped from cache keys
-        # Well names in cache may have suffixes like "PETROPHYSICAL", "FORMATION"
-        logger.warning(f"[PETRO_PARAMS] ========== BEFORE SUFFIX STRIPPING: rows={len(rows) if rows else 0}, nwell='{nwell}' ==========")
-        logger.info(f"[PETRO_PARAMS] Before suffix stripping check: rows={len(rows) if rows else 0}, nwell='{nwell}', will_check={not rows}")
-        if not rows:
-            logger.warning(f"[PETRO_PARAMS] ========== ✅✅✅ ENTERING SUFFIX STRIPPING BLOCK - rows is empty ✅✅✅ ==========")
-            logger.info(f"[PETRO_PARAMS] ✅ Entering suffix stripping block - rows is empty")
-            common_suffixes = ["PETROPHYSICAL", "FORMATION", "REPORT"]
-            query_base = nwell
-            logger.info(f"[PETRO_PARAMS] Trying suffix-stripped matching for '{well}' (norm: '{nwell}', base: '{query_base}')")
-            logger.info(f"[PETRO_PARAMS] Checking {len(self._by_well)} stored well keys...")
-            
-            matched = False
-            for stored_norm, stored_rows in self._by_well.items():
-                if not stored_rows:
-                    continue
-                # Strip suffixes from stored key
-                stored_base = stored_norm
-                for suffix in common_suffixes:
-                    if stored_base.endswith(suffix):
-                        stored_base = stored_base[:-len(suffix)]
-                        logger.info(f"[PETRO_PARAMS] Stripped suffix '{suffix}' from '{stored_norm}' -> '{stored_base}'")
-                        break
-                # Match if bases are equal
-                if query_base == stored_base:
-                    logger.info(f"[PETRO_PARAMS] ✅✅✅ FOUND MATCH (suffix stripped): '{well}' (base: '{query_base}') -> '{stored_norm}' (base: '{stored_base}')")
-                    rows = stored_rows
-                    matched = True
-                    break
-                else:
-                    logger.info(f"[PETRO_PARAMS] No match: query_base='{query_base}' != stored_base='{stored_base}' (from '{stored_norm}')")
-            
-            if not matched:
-                logger.warning(f"[PETRO_PARAMS] ❌ Suffix stripping did not find a match for '{well}' (base: '{query_base}')")
-
-        if not rows:
-            # Try matching against all stored well keys using normalized comparisons
-            # Use exact match only - avoid substring matching which can cause false positives
-            query_norm_clean = _norm_well(cleaned if 'cleaned' in locals() else well)
-            query_norm_picks = None
-            try:
-                query_norm_picks = _norm_well_picks(well)
-            except (ValueError, AttributeError):
-                query_norm_picks = None
-            except Exception as e:
-                # Unexpected error - log but continue
-                logger.debug(f"[PETRO_PARAMS] Unexpected error in well picks normalization: {e}")
-                query_norm_picks = None
-
-            logger.debug(f"[PETRO_PARAMS] Trying fuzzy matching for well '{well}' (norm_clean='{query_norm_clean}', norm_picks='{query_norm_picks}')")
-            
-            # First pass: exact matches only (including matches with common suffixes stripped)
-            # Well names in cache may have suffixes like "PETROPHYSICAL", "FORMATION"
-            common_suffixes = ["PETROPHYSICAL", "FORMATION", "REPORT"]
-            query_well_base = query_norm_clean
-            # Try to strip common suffixes from query (though it shouldn't have them)
-            for suffix in common_suffixes:
-                if query_well_base.endswith(suffix):
-                    query_well_base = query_well_base[:-len(suffix)]
-                    break
-            
-            for stored_norm, stored_rows in self._by_well.items():
-                if not stored_rows:
-                    continue
-                # Try exact match first
-                if query_norm_clean == stored_norm or (query_norm_picks and query_norm_picks == stored_norm):
-                    logger.info(f"[PETRO_PARAMS] Found exact match: '{well}' -> '{stored_norm}'")
-                    rows = stored_rows
-                    break
-                # Try matching with suffixes stripped from stored key
-                stored_base = stored_norm
-                for suffix in common_suffixes:
-                    if stored_base.endswith(suffix):
-                        stored_base = stored_base[:-len(suffix)]
-                        break
-                if query_well_base == stored_base or (query_norm_picks and query_norm_picks == stored_base):
-                    logger.info(f"[PETRO_PARAMS] Found match (suffixes stripped): '{well}' (base: '{query_well_base}') -> '{stored_norm}' (base: '{stored_base}')")
-                    rows = stored_rows
-                    break
-            
-            # Second pass: only if no exact match, try very strict substring matching
-            # Only match if one is a clear prefix/suffix of the other (e.g., "159F5" vs "159F5A")
-            # CRITICAL: Must match the full well number, not just prefix (e.g., "159F5" vs "159F15A")
             if not rows:
+                # Try normalizing like well picks (remove NO/WELL etc)
+                logger.info(f"[PETRO_PARAMS] Trying well picks normalization...")
+                try:
+                    nw2 = _norm_well_picks(well)
+                    logger.info(f"[PETRO_PARAMS] Well picks norm: '{nw2}'")
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"[PETRO_PARAMS] Well picks normalization failed: {e}")
+                    nw2 = None
+                except Exception as e:
+                    # Unexpected error in normalization - log but continue
+                    logger.warning(f"[PETRO_PARAMS] Unexpected error in well picks normalization: {e}")
+                    nw2 = None
+                if nw2:
+                    rows = self._by_well.get(nw2, [])
+                    logger.info(f"[PETRO_PARAMS] Well picks lookup result: rows={len(rows) if rows else 0}")
+
+            if not rows:
+                # Try extracting just the numeric/cleaned part
+                cleaned = well.upper().replace("WELL", "").replace("NO", "").strip()
+                nw3 = _norm_well(cleaned)
+                rows = self._by_well.get(nw3, [])
+                logger.info(f"[PETRO_PARAMS] After cleaned attempt: rows={len(rows) if rows else 0}, nw3='{nw3}'")
+        
+            # Try matching with suffixes stripped from cache keys
+            # Well names in cache may have suffixes like "PETROPHYSICAL", "FORMATION"
+            logger.warning(f"[PETRO_PARAMS] ========== BEFORE SUFFIX STRIPPING: rows={len(rows) if rows else 0}, nwell='{nwell}' ==========")
+            logger.info(f"[PETRO_PARAMS] Before suffix stripping check: rows={len(rows) if rows else 0}, nwell='{nwell}', will_check={not rows}")
+            if not rows:
+                logger.warning(f"[PETRO_PARAMS] ========== ✅✅✅ ENTERING SUFFIX STRIPPING BLOCK - rows is empty ✅✅✅ ==========")
+                logger.info(f"[PETRO_PARAMS] ✅ Entering suffix stripping block - rows is empty")
+                common_suffixes = ["PETROPHYSICAL", "FORMATION", "REPORT"]
+                query_base = nwell
+                logger.info(f"[PETRO_PARAMS] Trying suffix-stripped matching for '{well}' (norm: '{nwell}', base: '{query_base}')")
+                logger.info(f"[PETRO_PARAMS] Checking {len(self._by_well)} stored well keys...")
+                
+                matched = False
                 for stored_norm, stored_rows in self._by_well.items():
                     if not stored_rows:
                         continue
-                    # Only match if one well is clearly a variant of the other
-                    # e.g., "159F5" should match "159F5A" but NOT "159F15D"
-                    if query_norm_clean and stored_norm:
-                        # Extract the well number part (everything before the last letter/suffix)
-                        # For "159F5", well_num = "159F5"
-                        # For "159F15A", well_num = "159F15"
-                        # For "159F5A", well_num = "159F5"
-                        def extract_well_number(norm_str):
-                            # Extract the well number part before any suffix letters
-                            # Pattern: digits, optional letter (F), digits, then optional suffix letters
-                            # e.g., "159F5" -> "159F5", "159F5A" -> "159F5", "159F15A" -> "159F15"
-                            import re
-                            # Match: start with digits, optional F, more digits, then optional letters at end
-                            # Group 1 captures the numeric part (before suffix)
-                            match = re.match(r'^(\d+[A-Z]?\d+)([A-Z]*)$', norm_str)
-                            if match:
-                                well_num = match.group(1)
-                                logger.debug(f"[PETRO_PARAMS] extract_well_number: '{norm_str}' -> '{well_num}'")
-                                return well_num
-                            # Fallback: remove trailing letters
-                            well_num = re.sub(r'[A-Z]+$', '', norm_str)
-                            logger.debug(f"[PETRO_PARAMS] extract_well_number (fallback): '{norm_str}' -> '{well_num}'")
-                            return well_num
-                        
-                        query_well_num = extract_well_number(query_norm_clean)
-                        stored_well_num = extract_well_number(stored_norm)
-                        
-                        logger.debug(f"[PETRO_PARAMS] Comparing well numbers: query='{query_well_num}' vs stored='{stored_well_num}'")
-                        
-                        # Only match if well numbers are the same (allowing suffix differences)
-                        # e.g., "159F5" matches "159F5A" but "159F5" does NOT match "159F15A"
-                        if query_well_num == stored_well_num:
-                            # Check length difference is small (only suffix difference)
-                            if abs(len(query_norm_clean) - len(stored_norm)) <= 2:
-                                logger.info(f"[PETRO_PARAMS] ✅ Found well number match: '{well}' (norm: '{query_norm_clean}', well_num: '{query_well_num}') -> '{stored_norm}' (well_num: '{stored_well_num}')")
-                                rows = stored_rows
-                                break
-                        else:
-                            logger.debug(f"[PETRO_PARAMS] ❌ Well numbers don't match: '{query_well_num}' != '{stored_well_num}'")
-
-        if not rows:
-            # Log available wells for debugging (sample)
-            available_wells = sorted([r.well for rows_list in self._by_well.values() for r in (rows_list[:1] if rows_list else [])])[:10]
-            all_normalized_wells = sorted(list(self._by_well.keys()))[:10]
-            logger.warning(f"[PETRO_PARAMS] ❌ No rows found for well '{well}' (normalized: '{nwell}')")
-            logger.warning(f"[PETRO_PARAMS] Available wells (sample): {available_wells}")
-            logger.warning(f"[PETRO_PARAMS] Available normalized well keys (sample): {all_normalized_wells}")
-            return "[PETRO_PARAMS_JSON] " + json.dumps(
-                {"error": "no_rows_for_well", "well": well, "message": f"No petrophysical parameter rows found for well {well}."},
-                ensure_ascii=False,
-            )
-
-        # Extract and match formation from query (with fuzzy matching for typos)
-        # Use the cache path's parent directory as persist_dir for formation vocab
-        cache_path_obj = Path(self.cache_path)
-        persist_dir = str(cache_path_obj.parent) if cache_path_obj.parent.exists() else "./data/vectorstore"
-        formation = _extract_formation(query, persist_dir=persist_dir)
-        logger.info(f"[PETRO_PARAMS] Extracted formation: '{formation}' (from query: '{query[:100]}')")
-        
-        # Filter rows by formation if specified
-        if formation:
-            # Get available formations from rows
-            available_formations = sorted({r.formation for r in rows if r.formation})
-            logger.info(f"[PETRO_PARAMS] Available formations for well '{well}': {available_formations}")
-            
-            # Try fuzzy matching if exact match fails
-            matched_formation = None
-            if formation in available_formations:
-                matched_formation = formation
-                logger.info(f"[PETRO_PARAMS] ✅ Exact formation match: '{formation}'")
-            else:
-                matched_formation = _match_formation_fuzzy(formation, available_formations)
-                if matched_formation:
-                    logger.info(f"[PETRO_PARAMS] ✅ Fuzzy formation match: '{formation}' -> '{matched_formation}'")
-                else:
-                    logger.warning(f"[PETRO_PARAMS] ❌ No formation match found for '{formation}'. Available: {available_formations}")
-            
-            # Filter rows by matched formation
-            if matched_formation:
-                original_count = len(rows)
-                rows = [r for r in rows if r.formation == matched_formation]
-                logger.info(f"[PETRO_PARAMS] Filtered from {original_count} to {len(rows)} rows for formation '{matched_formation}'")
+                    # Strip suffixes from stored key
+                    stored_base = stored_norm
+                    for suffix in common_suffixes:
+                        if stored_base.endswith(suffix):
+                            stored_base = stored_base[:-len(suffix)]
+                            logger.info(f"[PETRO_PARAMS] Stripped suffix '{suffix}' from '{stored_norm}' -> '{stored_base}'")
+                            break
+                    # Match if bases are equal
+                    if query_base == stored_base:
+                        logger.info(f"[PETRO_PARAMS] ✅✅✅ FOUND MATCH (suffix stripped): '{well}' (base: '{query_base}') -> '{stored_norm}' (base: '{stored_base}')")
+                        rows = stored_rows
+                        matched = True
+                        break
+                    else:
+                        logger.info(f"[PETRO_PARAMS] No match: query_base='{query_base}' != stored_base='{stored_base}' (from '{stored_norm}')")
                 
-                # Edge case: Formation matched but no rows after filtering
+                if not matched:
+                    logger.warning(f"[PETRO_PARAMS] ❌ Suffix stripping did not find a match for '{well}' (base: '{query_base}')")
+
+            if not rows:
+                # Try matching against all stored well keys using normalized comparisons
+                # Use exact match only - avoid substring matching which can cause false positives
+                query_norm_clean = _norm_well(cleaned if 'cleaned' in locals() else well)
+                query_norm_picks = None
+                try:
+                    query_norm_picks = _norm_well_picks(well)
+                except (ValueError, AttributeError):
+                    query_norm_picks = None
+                except Exception as e:
+                    # Unexpected error - log but continue
+                    logger.debug(f"[PETRO_PARAMS] Unexpected error in well picks normalization: {e}")
+                    query_norm_picks = None
+
+                logger.debug(f"[PETRO_PARAMS] Trying fuzzy matching for well '{well}' (norm_clean='{query_norm_clean}', norm_picks='{query_norm_picks}')")
+                
+                # First pass: exact matches only (including matches with common suffixes stripped)
+                # Well names in cache may have suffixes like "PETROPHYSICAL", "FORMATION"
+                common_suffixes = ["PETROPHYSICAL", "FORMATION", "REPORT"]
+                query_well_base = query_norm_clean
+                # Try to strip common suffixes from query (though it shouldn't have them)
+                for suffix in common_suffixes:
+                    if query_well_base.endswith(suffix):
+                        query_well_base = query_well_base[:-len(suffix)]
+                        break
+                
+                for stored_norm, stored_rows in self._by_well.items():
+                    if not stored_rows:
+                        continue
+                    # Try exact match first
+                    if query_norm_clean == stored_norm or (query_norm_picks and query_norm_picks == stored_norm):
+                        logger.info(f"[PETRO_PARAMS] Found exact match: '{well}' -> '{stored_norm}'")
+                        rows = stored_rows
+                        break
+                    # Try matching with suffixes stripped from stored key
+                    stored_base = stored_norm
+                    for suffix in common_suffixes:
+                        if stored_base.endswith(suffix):
+                            stored_base = stored_base[:-len(suffix)]
+                            break
+                    if query_well_base == stored_base or (query_norm_picks and query_norm_picks == stored_base):
+                        logger.info(f"[PETRO_PARAMS] Found match (suffixes stripped): '{well}' (base: '{query_well_base}') -> '{stored_norm}' (base: '{stored_base}')")
+                        rows = stored_rows
+                        break
+                
+                # Second pass: only if no exact match, try very strict substring matching
+                # Only match if one is a clear prefix/suffix of the other (e.g., "159F5" vs "159F5A")
+                # CRITICAL: Must match the full well number, not just prefix (e.g., "159F5" vs "159F15A")
                 if not rows:
-                    return "[PETRO_PARAMS_JSON] " + json.dumps(
-                        {
-                            "error": "formation_no_data",
-                            "well": well,
-                            "formation": matched_formation,
-                            "message": f"Formation '{matched_formation}' was found for well {well}, but no petrophysical parameter data is available for this formation."
-                        },
-                        ensure_ascii=False,
-                    )
-            else:
-                # If formation specified but no match, return error with suggestions
-                return "[PETRO_PARAMS_JSON] " + json.dumps(
-                    {
-                        "error": "formation_not_found",
-                        "well": well,
-                        "formation": formation,
-                        "available_formations": available_formations,
-                        "message": f"Formation '{formation}' not found for well {well}. Available formations: {', '.join(available_formations)}"
-                    },
-                    ensure_ascii=False,
-                )
+                    for stored_norm, stored_rows in self._by_well.items():
+                        if not stored_rows:
+                            continue
+                        # Only match if one well is clearly a variant of the other
+                        # e.g., "159F5" should match "159F5A" but NOT "159F15D"
+                        if query_norm_clean and stored_norm:
+                            # Extract the well number part (everything before the last letter/suffix)
+                            # For "159F5", well_num = "159F5"
+                            # For "159F15A", well_num = "159F15"
+                            # For "159F5A", well_num = "159F5"
+                            def extract_well_number(norm_str):
+                                # Extract the well number part before any suffix letters
+                                # Pattern: digits, optional letter (F), digits, then optional suffix letters
+                                # e.g., "159F5" -> "159F5", "159F5A" -> "159F5", "159F15A" -> "159F15"
+                                import re
+                                # Match: start with digits, optional F, more digits, then optional letters at end
+                                # Group 1 captures the numeric part (before suffix)
+                                match = re.match(r'^(\d+[A-Z]?\d+)([A-Z]*)$', norm_str)
+                                if match:
+                                    well_num = match.group(1)
+                                    logger.debug(f"[PETRO_PARAMS] extract_well_number: '{norm_str}' -> '{well_num}'")
+                                    return well_num
+                                # Fallback: remove trailing letters
+                                well_num = re.sub(r'[A-Z]+$', '', norm_str)
+                                logger.debug(f"[PETRO_PARAMS] extract_well_number (fallback): '{norm_str}' -> '{well_num}'")
+                                return well_num
+                            
+                            query_well_num = extract_well_number(query_norm_clean)
+                            stored_well_num = extract_well_number(stored_norm)
+                            
+                            logger.debug(f"[PETRO_PARAMS] Comparing well numbers: query='{query_well_num}' vs stored='{stored_well_num}'")
+                            
+                            # Only match if well numbers are the same (allowing suffix differences)
+                            # e.g., "159F5" matches "159F5A" but "159F5" does NOT match "159F15A"
+                            if query_well_num == stored_well_num:
+                                # Check length difference is small (only suffix difference)
+                                if abs(len(query_norm_clean) - len(stored_norm)) <= 2:
+                                    logger.info(f"[PETRO_PARAMS] ✅ Found well number match: '{well}' (norm: '{query_norm_clean}', well_num: '{query_well_num}') -> '{stored_norm}' (well_num: '{stored_well_num}')")
+                                    rows = stored_rows
+                                    break
+                            else:
+                                logger.debug(f"[PETRO_PARAMS] ❌ Well numbers don't match: '{query_well_num}' != '{stored_well_num}'")
 
-        # Edge case: No rows after all filtering (shouldn't happen, but defensive check)
-        if not rows:
-            logger.warning(f"[PETRO_PARAMS] No rows remaining after filtering for well '{well}'")
-            return "[PETRO_PARAMS_JSON] " + json.dumps(
-                {
-                    "error": "no_data_after_filtering",
-                    "well": well,
-                    "message": f"No petrophysical parameter data available for well {well} after filtering."
-                },
-                ensure_ascii=False,
-            )
+            if not rows:
+                # Log available wells for debugging (sample)
+                available_wells = sorted([r.well for rows_list in self._by_well.values() for r in (rows_list[:1] if rows_list else [])])[:10]
+                all_normalized_wells = sorted(list(self._by_well.keys()))[:10]
+                logger.warning(f"[PETRO_PARAMS] ❌ No rows found for well '{well}' (normalized: '{nwell}')")
+                logger.warning(f"[PETRO_PARAMS] Available wells (sample): {available_wells}")
+                logger.warning(f"[PETRO_PARAMS] Available normalized well keys (sample): {all_normalized_wells}")
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No petrophysical parameter rows found for well {well}.",
+                    details={"well": well, "error_code": "no_rows_for_well"}
+                ))
 
-        # Build a formation->values mapping. Values remain raw numbers (no interpretation).
-        formations = sorted({r.formation for r in rows if r.formation})  # Filter out None formations
-        by_form: Dict[str, Dict[str, Optional[float]]] = {}
-        sources: Dict[Tuple[str, Optional[int], Optional[int]], None] = {}
+            # Extract and match formation from query (with fuzzy matching for typos)
+            # Use the cache path's parent directory as persist_dir for formation vocab
+            cache_path_obj = Path(self.cache_path)
+            persist_dir = str(cache_path_obj.parent) if cache_path_obj.parent.exists() else "./data/vectorstore"
+            formation = _extract_formation(query, persist_dir=persist_dir)
+            logger.info(f"[PETRO_PARAMS] Extracted formation: '{formation}' (from query: '{query[:100]}')")
+            
+            # Filter rows by formation if specified
+            if formation:
+                # Get available formations from rows
+                available_formations = sorted({r.formation for r in rows if r.formation})
+                logger.info(f"[PETRO_PARAMS] Available formations for well '{well}': {available_formations}")
+                
+                # Try fuzzy matching if exact match fails
+                matched_formation = None
+                if formation in available_formations:
+                    matched_formation = formation
+                    logger.info(f"[PETRO_PARAMS] ✅ Exact formation match: '{formation}'")
+                else:
+                    matched_formation = _match_formation_fuzzy(formation, available_formations)
+                    if matched_formation:
+                        logger.info(f"[PETRO_PARAMS] ✅ Fuzzy formation match: '{formation}' -> '{matched_formation}'")
+                    else:
+                        logger.warning(f"[PETRO_PARAMS] ❌ No formation match found for '{formation}'. Available: {available_formations}")
+                
+                # Filter rows by matched formation
+                if matched_formation:
+                    original_count = len(rows)
+                    rows = [r for r in rows if r.formation == matched_formation]
+                    logger.info(f"[PETRO_PARAMS] Filtered from {original_count} to {len(rows)} rows for formation '{matched_formation}'")
+                    
+                    # Edge case: Formation matched but no rows after filtering
+                    if not rows:
+                        return Result.err(AppError(
+                            type=ErrorType.NOT_FOUND_ERROR,
+                            message=f"Formation '{matched_formation}' was found for well {well}, but no petrophysical parameter data is available for this formation.",
+                            details={"well": well, "formation": matched_formation, "error_code": "formation_no_data"}
+                        ))
+                else:
+                    # If formation specified but no match, return error with suggestions
+                    return Result.err(AppError(
+                        type=ErrorType.NOT_FOUND_ERROR,
+                        message=f"Formation '{formation}' not found for well {well}. Available formations: {', '.join(available_formations)}",
+                        details={"well": well, "formation": formation, "available_formations": available_formations, "error_code": "formation_not_found"}
+                    ))
 
-        for r in rows:
-            if not r.formation:  # Skip rows with None formation
-                continue
-            by_form[r.formation] = {
-                "netgros": r.netgros,
-                "phif": r.phif,
-                "sw": r.sw,
-                "klogh_a": r.klogh_a,
-                "klogh_h": r.klogh_h,
-                "klogh_g": r.klogh_g,
+            # Edge case: No rows after all filtering (shouldn't happen, but defensive check)
+            if not rows:
+                logger.warning(f"[PETRO_PARAMS] No rows remaining after filtering for well '{well}'")
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No petrophysical parameter data available for well {well} after filtering.",
+                    details={"well": well, "error_code": "no_data_after_filtering"}
+                ))
+
+            # Build a formation->values mapping. Values remain raw numbers (no interpretation).
+            formations = sorted({r.formation for r in rows if r.formation})  # Filter out None formations
+            by_form: Dict[str, Dict[str, Optional[float]]] = {}
+            sources: Dict[Tuple[str, Optional[int], Optional[int]], None] = {}
+
+            for r in rows:
+                if not r.formation:  # Skip rows with None formation
+                    continue
+                by_form[r.formation] = {
+                    "netgros": r.netgros,
+                    "phif": r.phif,
+                    "sw": r.sw,
+                    "klogh_a": r.klogh_a,
+                    "klogh_h": r.klogh_h,
+                    "klogh_g": r.klogh_g,
+                }
+                sources[(r.source, r.page_start, r.page_end)] = None
+
+            # Edge case: Empty formations list after building mapping
+            if not formations:
+                logger.warning(f"[PETRO_PARAMS] No valid formations found after building mapping for well '{well}'")
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No valid formation data found for well {well}.",
+                    details={"well": well, "error_code": "no_valid_formations"}
+                ))
+
+            payload = {
+                "well": well,
+                "formations": formations,
+                "values": by_form,
+                "sources": [{"source": s, "page_start": ps, "page_end": pe} for (s, ps, pe) in sources.keys()],
             }
-            sources[(r.source, r.page_start, r.page_end)] = None
-
-        # Edge case: Empty formations list after building mapping
-        if not formations:
-            logger.warning(f"[PETRO_PARAMS] No valid formations found after building mapping for well '{well}'")
-            return "[PETRO_PARAMS_JSON] " + json.dumps(
-                {
-                    "error": "no_valid_formations",
-                    "well": well,
-                    "message": f"No valid formation data found for well {well}."
-                },
-                ensure_ascii=False,
-            )
-
-        payload = {
-            "well": well,
-            "formations": formations,
-            "values": by_form,
-            "sources": [{"source": s, "page_start": ps, "page_end": pe} for (s, ps, pe) in sources.keys()],
-        }
-        return "[PETRO_PARAMS_JSON] " + json.dumps(payload, ensure_ascii=False)
+            result_str = "[PETRO_PARAMS_JSON] " + json.dumps(payload, ensure_ascii=False)
+            return Result.ok(result_str)
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error(f"[PETRO_PARAMS] Error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
+        except Exception as e:
+            logger.error(f"[PETRO_PARAMS] Unexpected error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
 
     def get_tool(self):
         @tool

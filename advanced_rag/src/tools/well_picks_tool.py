@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
+from ..core.result import Result, AppError, ErrorType
+from ..core.tool_adapter import tool_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -397,181 +399,210 @@ class WellPicksTool:
             logger.warning(f"[WELL_PICKS] Fuzzy matching failed: {e}")
             return None
 
-    def lookup(self, query: str) -> str:
-        logger.info(f"[WELL_PICKS] lookup called with query: '{query}'")
-        # If no data loaded, return helpful message
-        if not self._rows:
-            return (
-                "[WELL_PICKS] Well picks data not available. The .dat file and cache are missing. "
-                "You can still query well information using the document retrieval tool."
+    def lookup(self, query: str) -> Result[str, AppError]:
+        """
+        Lookup well picks for a well.
+        
+        Args:
+            query: Query string containing well name and optionally formation
+            
+        Returns:
+            Result containing well picks information or error
+        """
+        try:
+            logger.info(f"[WELL_PICKS] lookup called with query: '{query}'")
+            # If no data loaded, return helpful message
+            if not self._rows:
+                return Result.ok(
+                    "[WELL_PICKS] Well picks data not available. The .dat file and cache are missing. "
+                    "You can still query well information using the document retrieval tool."
+                )
+        
+            # Try regex extraction first (for backwards compatibility and speed)
+            well_q = _extract_query_well(query) or ""
+            form_q = _extract_query_formation(query)
+            norm_w = _norm_well(well_q) if well_q else None
+            logger.info(f"[WELL_PICKS] Extracted well_q='{well_q}', norm_w='{norm_w}', form_q='{form_q}'")
+            
+            # If regex extraction failed or didn't produce a match, use fuzzy matching against stored well names
+            # This is the data-driven approach: use actual stored data as source of truth
+            if not norm_w or (norm_w and norm_w not in self._by_well):
+                logger.info(f"[WELL_PICKS] Regex extraction failed or no exact match, trying fuzzy matching against {len(self._well_labels)} stored well names...")
+                fuzzy_match = self._match_well_fuzzy(query)
+                if fuzzy_match:
+                    matched_label, norm_w = fuzzy_match
+                    well_q = matched_label
+                    logger.info(f"[WELL_PICKS] Fuzzy match successful: '{matched_label}' (normalized: {norm_w})")
+                elif not norm_w:
+                    # Both regex and fuzzy matching failed
+                    logger.warning(f"[WELL_PICKS] Both regex and fuzzy matching failed for query: '{query}'")
+
+            ql = query.lower()
+
+            # Complete list across ALL wells (deterministic, exhaustive)
+            # BUT only if NO specific well is mentioned
+            wants_all_wells = (
+                ("formation" in ql or "formations" in ql)
+                and ("well" in ql or "wells" in ql)
+                and any(k in ql for k in ["each", "every", "all", "complete", "entire"])
+                and not norm_w  # CRITICAL: Only want all wells if no specific well is detected
             )
-        
-        # Try regex extraction first (for backwards compatibility and speed)
-        well_q = _extract_query_well(query) or ""
-        form_q = _extract_query_formation(query)
-        norm_w = _norm_well(well_q) if well_q else None
-        logger.info(f"[WELL_PICKS] Extracted well_q='{well_q}', norm_w='{norm_w}', form_q='{form_q}'")
-        
-        # If regex extraction failed or didn't produce a match, use fuzzy matching against stored well names
-        # This is the data-driven approach: use actual stored data as source of truth
-        if not norm_w or (norm_w and norm_w not in self._by_well):
-            logger.info(f"[WELL_PICKS] Regex extraction failed or no exact match, trying fuzzy matching against {len(self._well_labels)} stored well names...")
-            fuzzy_match = self._match_well_fuzzy(query)
-            if fuzzy_match:
-                matched_label, norm_w = fuzzy_match
-                well_q = matched_label
-                logger.info(f"[WELL_PICKS] Fuzzy match successful: '{matched_label}' (normalized: {norm_w})")
-            elif not norm_w:
-                # Both regex and fuzzy matching failed
-                logger.warning(f"[WELL_PICKS] Both regex and fuzzy matching failed for query: '{query}'")
-
-        ql = query.lower()
-
-        # Complete list across ALL wells (deterministic, exhaustive)
-        # BUT only if NO specific well is mentioned
-        wants_all_wells = (
-            ("formation" in ql or "formations" in ql)
-            and ("well" in ql or "wells" in ql)
-            and any(k in ql for k in ["each", "every", "all", "complete", "entire"])
-            and not norm_w  # CRITICAL: Only want all wells if no specific well is detected
-        )
-        if wants_all_wells:
-            all_wells: List[Tuple[str, List[str]]] = []
-            for _nw, rows in self._by_well.items():
-                if not rows:
-                    continue
-                well_label = rows[0].well
-                formations = sorted({r.formation for r in rows})
-                all_wells.append((well_label, formations))
-
-            all_wells.sort(key=lambda x: x[0])
-            lines = [f"[WELL_PICKS_ALL] Wells: {len(all_wells)}"]
-            for well_label, formations in all_wells:
-                lines.append(f"\n{well_label}:")
-                for f in formations:
-                    lines.append(f"- {f}")
-            return "\n".join(lines)
-
-        if not norm_w:
-            return "[WELL_PICKS] No well detected in query. Provide a well like 15/9-19A."
-
-        # Try exact match first
-        candidates = self._by_well.get(norm_w, [])
-        if candidates:
-            logger.info(f"[WELL_PICKS] Exact match found for '{well_q}' (normalized: {norm_w})")
-        
-        # If no exact match, try fuzzy matching strategies
-        if not candidates:
-            # Strategy 1: Try without trailing "A" if query has "A" (e.g., "159F15A" -> "159F15")
-            # This handles cases where stored well is "15/9-F-15" but query is "15/9-F-15 A"
-            if norm_w.endswith("A"):
-                norm_w_no_a = norm_w[:-1]  # Remove trailing "A"
-                candidates = self._by_well.get(norm_w_no_a, [])
-                if candidates:
-                    logger.info(f"[WELL_PICKS] Matched well '{well_q}' by removing trailing 'A' (normalized: {norm_w_no_a})")
-            
-            # Strategy 2: Try adding "A" if query doesn't have it but stored does
-            # This handles cases where stored well is "15/9-F-15 A" but query is "15/9-F-15"
-            if not candidates and not norm_w.endswith("A"):
-                norm_w_with_a = norm_w + "A"
-                candidates = self._by_well.get(norm_w_with_a, [])
-                if candidates:
-                    logger.info(f"[WELL_PICKS] Matched well '{well_q}' by adding trailing 'A' (normalized: {norm_w_with_a})")
-        
-        # If still no match, try fuzzy matching on well names
-        if not candidates:
-            # Try multiple strategies:
-            # 1. Check if normalized names are similar (prefix/suffix match)
-            for stored_norm, stored_rows in self._by_well.items():
-                # Check if the normalized well names are similar (e.g., "159F15" vs "159F15A")
-                if stored_norm.startswith(norm_w) or norm_w.startswith(stored_norm):
-                    # If one is a prefix of the other, they're likely the same well
-                    if abs(len(stored_norm) - len(norm_w)) <= 2:  # Allow up to 2 char difference
-                        candidates = stored_rows
-                        logger.info(f"[WELL_PICKS] Matched well '{well_q}' via prefix match (stored: {stored_norm}, query: {norm_w})")
-                        break
-            
-            # 2. If still no match, try matching on the original well labels (case-insensitive)
-            if not candidates:
-                well_q_upper = well_q.upper()
-                for stored_norm, stored_rows in self._by_well.items():
-                    if not stored_rows:
+            if wants_all_wells:
+                all_wells: List[Tuple[str, List[str]]] = []
+                for _nw, rows in self._by_well.items():
+                    if not rows:
                         continue
-                    stored_label = stored_rows[0].well.upper()
-                    # Check if query well name appears in stored label or vice versa
-                    if (well_q_upper in stored_label or stored_label in well_q_upper or
-                        well_q_upper.replace(" ", "") == stored_label.replace(" ", "") or
-                        _norm_well(well_q_upper) == stored_norm):
-                        candidates = stored_rows
-                        logger.info(f"[WELL_PICKS] Matched well '{well_q}' via label match (stored label: {stored_rows[0].well}, query: {well_q})")
-                        break
+                    well_label = rows[0].well
+                    formations = sorted({r.formation for r in rows})
+                    all_wells.append((well_label, formations))
+
+                all_wells.sort(key=lambda x: x[0])
+                lines = [f"[WELL_PICKS_ALL] Wells: {len(all_wells)}"]
+                for well_label, formations in all_wells:
+                    lines.append(f"\n{well_label}:")
+                    for f in formations:
+                        lines.append(f"- {f}")
+                return Result.ok("\n".join(lines))
+
+            if not norm_w:
+                return Result.err(AppError(
+                    type=ErrorType.VALIDATION_ERROR,
+                    message="No well detected in query. Provide a well like 15/9-19A.",
+                    details={"query": query, "error_code": "no_well_detected"}
+                ))
+
+            # Try exact match first
+            candidates = self._by_well.get(norm_w, [])
+            if candidates:
+                logger.info(f"[WELL_PICKS] Exact match found for '{well_q}' (normalized: {norm_w})")
+            
+            # If no exact match, try fuzzy matching strategies
+            if not candidates:
+                # Strategy 1: Try without trailing "A" if query has "A" (e.g., "159F15A" -> "159F15")
+                # This handles cases where stored well is "15/9-F-15" but query is "15/9-F-15 A"
+                if norm_w.endswith("A"):
+                    norm_w_no_a = norm_w[:-1]  # Remove trailing "A"
+                    candidates = self._by_well.get(norm_w_no_a, [])
+                    if candidates:
+                        logger.info(f"[WELL_PICKS] Matched well '{well_q}' by removing trailing 'A' (normalized: {norm_w_no_a})")
+                
+                # Strategy 2: Try adding "A" if query doesn't have it but stored does
+                # This handles cases where stored well is "15/9-F-15 A" but query is "15/9-F-15"
+                if not candidates and not norm_w.endswith("A"):
+                    norm_w_with_a = norm_w + "A"
+                    candidates = self._by_well.get(norm_w_with_a, [])
+                    if candidates:
+                        logger.info(f"[WELL_PICKS] Matched well '{well_q}' by adding trailing 'A' (normalized: {norm_w_with_a})")
+            
+            # If still no match, try fuzzy matching on well names
+            if not candidates:
+                # Try multiple strategies:
+                # 1. Check if normalized names are similar (prefix/suffix match)
+                for stored_norm, stored_rows in self._by_well.items():
+                    # Check if the normalized well names are similar (e.g., "159F15" vs "159F15A")
+                    if stored_norm.startswith(norm_w) or norm_w.startswith(stored_norm):
+                        # If one is a prefix of the other, they're likely the same well
+                        if abs(len(stored_norm) - len(norm_w)) <= 2:  # Allow up to 2 char difference
+                            candidates = stored_rows
+                            logger.info(f"[WELL_PICKS] Matched well '{well_q}' via prefix match (stored: {stored_norm}, query: {norm_w})")
+                            break
+                
+                # 2. If still no match, try matching on the original well labels (case-insensitive)
+                if not candidates:
+                    well_q_upper = well_q.upper()
+                    for stored_norm, stored_rows in self._by_well.items():
+                        if not stored_rows:
+                            continue
+                        stored_label = stored_rows[0].well.upper()
+                        # Check if query well name appears in stored label or vice versa
+                        if (well_q_upper in stored_label or stored_label in well_q_upper or
+                            well_q_upper.replace(" ", "") == stored_label.replace(" ", "") or
+                            _norm_well(well_q_upper) == stored_norm):
+                            candidates = stored_rows
+                            logger.info(f"[WELL_PICKS] Matched well '{well_q}' via label match (stored label: {stored_rows[0].well}, query: {well_q})")
+                            break
         
-        if not candidates:
-            # Provide helpful error with available wells
-            available = sorted([rows[0].well for rows in self._by_well.values() if rows])[:10]
-            available_norm = sorted(list(self._by_well.keys()))[:10]
-            logger.warning(f"[WELL_PICKS] No match found. Query well='{well_q}', normalized='{norm_w}'. Available normalized keys (sample): {available_norm}")
-            return f"[WELL_PICKS] No rows found for well '{well_q}' (normalized: {norm_w}). Available wells (sample): {', '.join(available)}..."
+            if not candidates:
+                # Provide helpful error with available wells
+                available = sorted([rows[0].well for rows in self._by_well.values() if rows])[:10]
+                available_norm = sorted(list(self._by_well.keys()))[:10]
+                logger.warning(f"[WELL_PICKS] No match found. Query well='{well_q}', normalized='{norm_w}'. Available normalized keys (sample): {available_norm}")
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No rows found for well '{well_q}' (normalized: {norm_w}). Available wells (sample): {', '.join(available)}...",
+                    details={"well": well_q, "normalized": norm_w, "available_wells": available, "error_code": "no_rows_for_well"}
+                ))
 
-        is_depth = "depth" in ql or "md" in ql or "tvd" in ql or "tvdss" in ql
-        is_list_formations = ("list" in ql or "all" in ql) and "formation" in ql
-        is_formations_in_well = "formations" in ql and ("in" in ql or "for" in ql or "all" in ql)
+            is_depth = "depth" in ql or "md" in ql or "tvd" in ql or "tvdss" in ql
+            is_list_formations = ("list" in ql or "all" in ql) and "formation" in ql
+            is_formations_in_well = "formations" in ql and ("in" in ql or "for" in ql or "all" in ql)
 
-        if is_list_formations or is_formations_in_well:
-            formations = sorted({r.formation for r in candidates})
-            result = "\n".join([f"[WELL_PICKS] Well {candidates[0].well} formations:"] + [f"- {f}" for f in formations])
-            logger.info(f"[WELL_PICKS] Returning formation list for well '{candidates[0].well}': {len(formations)} formations")
-            return result
+            if is_list_formations or is_formations_in_well:
+                formations = sorted({r.formation for r in candidates})
+                result = "\n".join([f"[WELL_PICKS] Well {candidates[0].well} formations:"] + [f"- {f}" for f in formations])
+                logger.info(f"[WELL_PICKS] Returning formation list for well '{candidates[0].well}': {len(formations)} formations")
+                return Result.ok(result)
 
-        if is_depth and form_q:
-            nf = _norm_form(form_q)
-            matched = [r for r in candidates if nf and nf in _norm_form(r.formation)]
-            if not matched:
-                # try substring fallback (e.g. "hugin" in "Hugin Fm. VOLVE")
-                matched = [r for r in candidates if form_q.lower() in r.formation.lower()]
+            if is_depth and form_q:
+                nf = _norm_form(form_q)
+                matched = [r for r in candidates if nf and nf in _norm_form(r.formation)]
+                if not matched:
+                    # try substring fallback (e.g. "hugin" in "Hugin Fm. VOLVE")
+                    matched = [r for r in candidates if form_q.lower() in r.formation.lower()]
 
-            if not matched:
-                return f"[WELL_PICKS] Formation '{form_q}' not found in well {candidates[0].well}."
+                if not matched:
+                    return Result.err(AppError(
+                        type=ErrorType.NOT_FOUND_ERROR,
+                        message=f"Formation '{form_q}' not found in well {candidates[0].well}.",
+                        details={"well": candidates[0].well, "formation": form_q, "error_code": "formation_not_found"}
+                    ))
 
-            # Summarize top/base if present
-            top = next((r for r in matched if r.pick_type == "Top"), None)
-            base = next((r for r in matched if r.pick_type == "Base"), None)
+                # Summarize top/base if present
+                top = next((r for r in matched if r.pick_type == "Top"), None)
+                base = next((r for r in matched if r.pick_type == "Base"), None)
 
-            def fmt_row(r: WellPickRow) -> str:
-                parts = [f"{r.pick_type}:" if r.pick_type != "-" else "Pick:"]
-                if r.md_m is not None:
-                    parts.append(f"MD {r.md_m:.2f} m")
-                if r.tvd_m is not None:
-                    parts.append(f"TVD {r.tvd_m:.2f} m")
-                if r.tvdss_m is not None:
-                    parts.append(f"TVDSS {r.tvdss_m:.2f} m")
-                return " ".join(parts)
+                def fmt_row(r: WellPickRow) -> str:
+                    parts = [f"{r.pick_type}:" if r.pick_type != "-" else "Pick:"]
+                    if r.md_m is not None:
+                        parts.append(f"MD {r.md_m:.2f} m")
+                    if r.tvd_m is not None:
+                        parts.append(f"TVD {r.tvd_m:.2f} m")
+                    if r.tvdss_m is not None:
+                        parts.append(f"TVDSS {r.tvdss_m:.2f} m")
+                    return " ".join(parts)
 
-            header = f"[WELL_PICKS] {matched[0].formation} in well {candidates[0].well}"
-            lines = [header]
-            if top:
-                lines.append(f"- {fmt_row(top)}")
-            if base:
-                lines.append(f"- {fmt_row(base)}")
-            if not top and not base:
-                lines.extend([f"- {fmt_row(r)}" for r in matched[:10]])
-            return "\n".join(lines)
+                header = f"[WELL_PICKS] {matched[0].formation} in well {candidates[0].well}"
+                lines = [header]
+                if top:
+                    lines.append(f"- {fmt_row(top)}")
+                if base:
+                    lines.append(f"- {fmt_row(base)}")
+                if not top and not base:
+                    lines.extend([f"- {fmt_row(r)}" for r in matched[:10]])
+                return Result.ok("\n".join(lines))
 
-        # Default: return a compact preview for the well (top 25 rows)
-        lines = [f"[WELL_PICKS] Preview rows for well {candidates[0].well} (showing up to 25):"]
-        for r in candidates[:25]:
-            lines.append(
-                f"- {r.formation} {r.pick_type}: MD={r.md_m}, TVD={r.tvd_m}, TVDSS={r.tvdss_m} (Q={r.quality})"
-            )
-        return "\n".join(lines)
+            # Default: return a compact preview for the well (top 25 rows)
+            lines = [f"[WELL_PICKS] Preview rows for well {candidates[0].well} (showing up to 25):"]
+            for r in candidates[:25]:
+                lines.append(
+                    f"- {r.formation} {r.pick_type}: MD={r.md_m}, TVD={r.tvd_m}, TVDSS={r.tvdss_m} (Q={r.quality})"
+                )
+            return Result.ok("\n".join(lines))
+        except Exception as e:
+            logger.error(f"[WELL_PICKS] Error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
 
     def get_tool(self):
         """Return a LangChain tool wrapping the structured lookup."""
-
+        @tool_wrapper
+        def lookup_well_picks_internal(query: str) -> Result[str, AppError]:
+            """Structured lookup for formation/depth/interval picks from Well_picks_Volve_v1.dat."""
+            return self.lookup(query)
+        
         @tool
         def lookup_well_picks(query: str) -> str:
             """Structured lookup for formation/depth/interval picks from Well_picks_Volve_v1.dat."""
-            return self.lookup(query)
+            return lookup_well_picks_internal(query)
 
         return lookup_well_picks
 

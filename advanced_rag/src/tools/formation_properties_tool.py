@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from langchain.tools import tool
+from ..core.result import Result, AppError, ErrorType
+from ..core.tool_adapter import tool_wrapper
 
 from .well_picks_tool import WellPicksTool, WellPickRow, _norm_well as _norm_well_picks
 from .petro_params_tool import PetroParamsTool, PetroParamRow, _norm_well as _norm_well_petro
@@ -153,138 +155,159 @@ class FormationPropertiesTool:
         
         return []
 
-    def lookup(self, query: str) -> str:
-        ql = query.lower()
+    def lookup(self, query: str) -> Result[str, AppError]:
+        """
+        Lookup formation properties for a well or all wells.
         
-        # Enhanced detection for petrophysicist query patterns
-        # Must distinguish between:
-        # - "all formations in X well" → single-well lookup
-        # - "all available formations" → all-wells lookup
-        
-        # First, check if a specific well is mentioned (this takes priority)
-        well = _extract_platform_or_well(query)
-        
-        # Enhanced property detection - more flexible for petrophysicist language
-        has_properties = any(k in ql for k in [
-            "properties", "petrophysical", "petro", "parameter", "parameters", 
-            "reported", "values", "data", "net", "gross", "phif", "sw", "klogh"
-        ])
-        
-        has_formation_keyword = "formation" in ql or "formations" in ql
-        has_all_keyword = any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
-        has_list_all = "list" in ql and "all" in ql
-        has_in_well = "in" in ql and ("well" in ql or well is not None)  # "all formations in 15/9-F-5"
-        has_for_well = "for" in ql and ("well" in ql or well is not None)  # "all formations for 15/9-F-5"
-        
-        # Check for "all formations in [specific well]" pattern
-        # This should use single-well lookup (don't route to all-wells)
-        is_single_well_all_formations = (
-            well is not None  # A specific well is mentioned
-            and has_formation_keyword
-            and has_all_keyword
-            and (has_in_well or has_for_well)  # "all formations in X" or "all formations for X"
-        )
-        
-        # Check for "all wells" patterns (no specific well)
-        wants_all_wells = (
-            not well  # No specific well detected
-            and has_formation_keyword
-            and (
-                # Pattern 1: Has properties keywords + "all" keyword
-                (has_properties and has_all_keyword)
-                # Pattern 2: "list all" + "formation" (even without properties)
-                or (has_list_all and has_formation_keyword)
-                # Pattern 3: "all" + "formation" + "available" 
-                or (has_all_keyword and has_formation_keyword and "available" in ql)
-                # Pattern 4: "all formations" with properties keywords anywhere
-                or (has_all_keyword and has_formation_keyword and has_properties)
-            )
-        )
-        
-        if wants_all_wells:
-            # Return formations and properties for ALL wells
-            logger.info(f"[FORMATION_PROPERTIES] Detected 'all wells' query: '{query}' - routing to _lookup_all_wells()")
-            result = self._lookup_all_wells()
-            logger.info(f"[FORMATION_PROPERTIES] _lookup_all_wells() returned {len(result)} characters")
-            return result
-        
-        # If we have a specific well, use single-well lookup
-        # This handles both "all formations in X" and regular formation queries
-        if not well:
-            logger.warning(f"[FORMATION_PROPERTIES] No well detected in query: '{query}'")
-            return "[WELL_FORMATION_PROPERTIES] No well detected. Provide a well like 15/9-F-4, or ask for 'all formations and their properties' to see all wells."
-
+        Args:
+            query: Query string containing well name (optional) and formation/property keywords
+            
+        Returns:
+            Result containing formatted table with formation properties or error
+        """
         try:
-            well_label, formations = self._get_formations_for_well(well)
-        except KeyError:
-            return f"[WELL_FORMATION_PROPERTIES] No formation picks found for well '{well}'."
-
-        petro_rows = self._petro_rows_for_well(well)
-        petro_by_form: Dict[str, PetroParamRow] = {}
-        for r in petro_rows:
-            petro_by_form[_norm_form(r.formation)] = r
-
-        lines: List[str] = []
-        lines.append(f"[WELL_FORMATION_PROPERTIES] Well: {well_label}")
-        lines.append(f"Formations (from well picks): {len(formations)}")
-        lines.append("")
-        lines.append("| Formation | Net/Gross | PHIF (Porosity) | SW | KLOGH (A/H/G) |")
-        lines.append("|---|---:|---:|---:|---|")
-
-        missing = 0
-        used_sources: Dict[Tuple[str, Optional[int], Optional[int]], None] = {}
-
-        for f in formations:
-            nf = _norm_form(f)
-            pr = petro_by_form.get(nf)
-
-            if pr is None:
-                # Try startswith-like matching (e.g., "Sleipner Fm." vs "Sleipner")
-                pr = next(
-                    (r for r in petro_rows if _norm_form(f).startswith(_norm_form(r.formation)) or _norm_form(r.formation).startswith(_norm_form(f))),
-                    None,
-                )
-
-            if pr is None:
-                missing += 1
-                lines.append(f"| {f} | N/A | N/A | N/A | N/A |")
-                continue
-
-            used_sources[(pr.source, pr.page_start, pr.page_end)] = None
-            klogh = f"{_fmt_num(pr.klogh_a, 3)}/{_fmt_num(pr.klogh_h, 3)}/{_fmt_num(pr.klogh_g, 3)}"
-            lines.append(
-                "| "
-                + " | ".join(
-                    [
-                        f,
-                        _fmt_num(pr.netgros, 3),
-                        _fmt_num(pr.phif, 3),
-                        _fmt_num(pr.sw, 3),
-                        klogh,
-                    ]
-                )
-                + " |"
+            ql = query.lower()
+            
+            # Enhanced detection for petrophysicist query patterns
+            # Must distinguish between:
+            # - "all formations in X well" → single-well lookup
+            # - "all available formations" → all-wells lookup
+            
+            # First, check if a specific well is mentioned (this takes priority)
+            well = _extract_platform_or_well(query)
+            
+            # Enhanced property detection - more flexible for petrophysicist language
+            has_properties = any(k in ql for k in [
+            "properties", "petrophysical", "petro", "parameter", "parameters", 
+                "reported", "values", "data", "net", "gross", "phif", "sw", "klogh"
+            ])
+            
+            has_formation_keyword = "formation" in ql or "formations" in ql
+            has_all_keyword = any(k in ql for k in ["all", "each", "every", "complete", "entire", "list all"])
+            has_list_all = "list" in ql and "all" in ql
+            has_in_well = "in" in ql and ("well" in ql or well is not None)  # "all formations in 15/9-F-5"
+            has_for_well = "for" in ql and ("well" in ql or well is not None)  # "all formations for 15/9-F-5"
+            
+            # Check for "all formations in [specific well]" pattern
+            # This should use single-well lookup (don't route to all-wells)
+            is_single_well_all_formations = (
+                well is not None  # A specific well is mentioned
+                and has_formation_keyword
+                and has_all_keyword
+                and (has_in_well or has_for_well)  # "all formations in X" or "all formations for X"
             )
+            
+            # Check for "all wells" patterns (no specific well)
+            wants_all_wells = (
+                not well  # No specific well detected
+                and has_formation_keyword
+                and (
+                    # Pattern 1: Has properties keywords + "all" keyword
+                    (has_properties and has_all_keyword)
+                    # Pattern 2: "list all" + "formation" (even without properties)
+                    or (has_list_all and has_formation_keyword)
+                    # Pattern 3: "all" + "formation" + "available" 
+                    or (has_all_keyword and has_formation_keyword and "available" in ql)
+                    # Pattern 4: "all formations" with properties keywords anywhere
+                    or (has_all_keyword and has_formation_keyword and has_properties)
+                )
+            )
+        
+            if wants_all_wells:
+                # Return formations and properties for ALL wells
+                logger.info(f"[FORMATION_PROPERTIES] Detected 'all wells' query: '{query}' - routing to _lookup_all_wells()")
+                result = self._lookup_all_wells()
+                logger.info(f"[FORMATION_PROPERTIES] _lookup_all_wells() returned {len(result)} characters")
+                return Result.ok(result)
+            
+            # If we have a specific well, use single-well lookup
+            # This handles both "all formations in X" and regular formation queries
+            if not well:
+                logger.warning(f"[FORMATION_PROPERTIES] No well detected in query: '{query}'")
+                return Result.err(AppError(
+                    type=ErrorType.VALIDATION_ERROR,
+                    message="No well detected. Provide a well like 15/9-F-4, or ask for 'all formations and their properties' to see all wells.",
+                    details={"query": query, "error_code": "no_well_detected"}
+                ))
 
-        lines.append("")
-        lines.append("Notes:")
-        lines.append("- Values come from parsed **Petrophysical Parameters** tables when available.")
-        lines.append("- `N/A` means that formation does not have a parsed petrophysical-parameters row for this well (common/expected).")
-        lines.append("")
+            try:
+                well_label, formations = self._get_formations_for_well(well)
+            except KeyError as e:
+                return Result.err(AppError(
+                    type=ErrorType.NOT_FOUND_ERROR,
+                    message=f"No formation picks found for well '{well}'.",
+                    details={"well": well, "error_code": "no_formations_for_well"}
+                ))
 
-        # Emit sources as separate lines so the Streamlit UI can make them clickable.
-        if used_sources:
-            lines.append("Sources:")
-            for (src, ps, pe) in sorted(used_sources.keys(), key=lambda x: (x[0] or "", x[1] or -1, x[2] or -1)):
-                pages = ""
-                if ps is not None and pe is not None:
-                    pages = f" (pages {ps}-{pe})"
-                lines.append(f"Source: {src}{pages}")
+            petro_rows = self._petro_rows_for_well(well)
+            petro_by_form: Dict[str, PetroParamRow] = {}
+            for r in petro_rows:
+                petro_by_form[_norm_form(r.formation)] = r
 
-        lines.append("")
-        lines.append(f"Coverage: {len(formations) - missing}/{len(formations)} formations have petrophysical table values.")
+            lines: List[str] = []
+            lines.append(f"[WELL_FORMATION_PROPERTIES] Well: {well_label}")
+            lines.append(f"Formations (from well picks): {len(formations)}")
+            lines.append("")
+            lines.append("| Formation | Net/Gross | PHIF (Porosity) | SW | KLOGH (A/H/G) |")
+            lines.append("|---|---:|---:|---:|---|")
 
-        return "\n".join(lines)
+            missing = 0
+            used_sources: Dict[Tuple[str, Optional[int], Optional[int]], None] = {}
+
+            for f in formations:
+                nf = _norm_form(f)
+                pr = petro_by_form.get(nf)
+
+                if pr is None:
+                    # Try startswith-like matching (e.g., "Sleipner Fm." vs "Sleipner")
+                    pr = next(
+                        (r for r in petro_rows if _norm_form(f).startswith(_norm_form(r.formation)) or _norm_form(r.formation).startswith(_norm_form(f))),
+                        None,
+                    )
+
+                if pr is None:
+                    missing += 1
+                    lines.append(f"| {f} | N/A | N/A | N/A | N/A |")
+                    continue
+
+                used_sources[(pr.source, pr.page_start, pr.page_end)] = None
+                klogh = f"{_fmt_num(pr.klogh_a, 3)}/{_fmt_num(pr.klogh_h, 3)}/{_fmt_num(pr.klogh_g, 3)}"
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            f,
+                            _fmt_num(pr.netgros, 3),
+                            _fmt_num(pr.phif, 3),
+                            _fmt_num(pr.sw, 3),
+                            klogh,
+                        ]
+                    )
+                    + " |"
+                )
+
+            lines.append("")
+            lines.append("Notes:")
+            lines.append("- Values come from parsed **Petrophysical Parameters** tables when available.")
+            lines.append("- `N/A` means that formation does not have a parsed petrophysical-parameters row for this well (common/expected).")
+            lines.append("")
+
+            # Emit sources as separate lines so the Streamlit UI can make them clickable.
+            if used_sources:
+                lines.append("Sources:")
+                for (src, ps, pe) in sorted(used_sources.keys(), key=lambda x: (x[0] or "", x[1] or -1, x[2] or -1)):
+                    pages = ""
+                    if ps is not None and pe is not None:
+                        pages = f" (pages {ps}-{pe})"
+                    lines.append(f"Source: {src}{pages}")
+
+            lines.append("")
+            lines.append(f"Coverage: {len(formations) - missing}/{len(formations)} formations have petrophysical table values.")
+
+            return Result.ok("\n".join(lines))
+        except Exception as e:
+            logger.error(f"[FORMATION_PROPERTIES] Error in lookup: {e}", exc_info=True)
+            return Result.from_exception(e, ErrorType.PROCESSING_ERROR, context={"query": query})
     
     def _lookup_all_wells(self) -> str:
         """Return formations and properties for all wells."""
@@ -382,13 +405,21 @@ class FormationPropertiesTool:
         return result
 
     def get_tool(self):
+        @tool_wrapper
+        def lookup_formation_properties_internal(query: str) -> Result[str, AppError]:
+            """One-shot: list formations for a well and their petrophysical properties (Net/Gross, PHIF, SW, KLOGH) when available.
+            
+            KLOGH = Klinkenberg-corrected horizontal permeability (A/H/G = Arithmetic/Harmonic/Geometric means).
+            """
+            return self.lookup(query)
+        
         @tool
         def lookup_formation_properties(query: str) -> str:
             """One-shot: list formations for a well and their petrophysical properties (Net/Gross, PHIF, SW, KLOGH) when available.
             
             KLOGH = Klinkenberg-corrected horizontal permeability (A/H/G = Arithmetic/Harmonic/Geometric means).
             """
-            return self.lookup(query)
+            return lookup_formation_properties_internal(query)
 
         return lookup_formation_properties
 
