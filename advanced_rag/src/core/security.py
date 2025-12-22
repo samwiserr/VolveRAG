@@ -72,9 +72,10 @@ class RateLimiter:
     
     Supports multiple rate limiters for different endpoints or operations.
     Automatically cleans up inactive buckets to prevent memory leaks.
+    Supports per-endpoint rate limiting and rate limit headers.
     """
     
-    def __init__(self, requests_per_minute: int = 60, cleanup_interval: int = 3600):
+    def __init__(self, requests_per_minute: int = 60, cleanup_interval: int = 3600, endpoint_limits: Optional[Dict[str, int]] = None):
         """
         Initialize rate limiter.
         
@@ -89,6 +90,9 @@ class RateLimiter:
         self._refill_rate = requests_per_minute / 60.0
         self._cleanup_interval = cleanup_interval
         self._last_cleanup: float = time.time()
+        # Per-endpoint rate limits (endpoint -> requests_per_minute)
+        self._endpoint_limits: Dict[str, int] = endpoint_limits or {}
+        self._endpoint_buckets: Dict[str, Dict[str, TokenBucket]] = {}  # endpoint -> identifier -> bucket
     
     def _cleanup_old_buckets(self) -> None:
         """
@@ -129,17 +133,19 @@ class RateLimiter:
                 self._buckets[identifier] = bucket
             return self._buckets[identifier]
     
-    def check_rate_limit(self, identifier: str) -> Result[bool, AppError]:
+    def check_rate_limit(self, identifier: str, endpoint: Optional[str] = None) -> Result[bool, AppError]:
         """
         Check if request is within rate limit.
         
         Args:
             identifier: User/IP identifier
+            endpoint: Optional endpoint name for per-endpoint rate limiting
             
         Returns:
             Result with True if allowed, False if rate limited
         """
         try:
+            # Check global rate limit
             bucket = self._get_bucket(identifier)
             allowed = bucket.consume(1)
             
@@ -148,8 +154,31 @@ class RateLimiter:
                 return Result.err(AppError(
                     type=ErrorType.RATE_LIMIT_ERROR,
                     message=f"Rate limit exceeded. Try again in {available_in} seconds.",
-                    details={"identifier": identifier, "available_tokens": bucket.available()}
+                    details={
+                        "identifier": identifier,
+                        "endpoint": endpoint,
+                        "available_tokens": bucket.available(),
+                        "limit_type": "global"
+                    }
                 ))
+            
+            # Check per-endpoint rate limit if specified
+            if endpoint and endpoint in self._endpoint_limits:
+                endpoint_bucket = self._get_endpoint_bucket(endpoint, identifier)
+                endpoint_allowed = endpoint_bucket.consume(1)
+                
+                if not endpoint_allowed:
+                    available_in = int((1.0 - endpoint_bucket.tokens) / endpoint_bucket.refill_rate)
+                    return Result.err(AppError(
+                        type=ErrorType.RATE_LIMIT_ERROR,
+                        message=f"Rate limit exceeded for endpoint '{endpoint}'. Try again in {available_in} seconds.",
+                        details={
+                            "identifier": identifier,
+                            "endpoint": endpoint,
+                            "available_tokens": endpoint_bucket.available(),
+                            "limit_type": "endpoint"
+                        }
+                    ))
             
             return Result.ok(True)
         except Exception as e:
@@ -160,10 +189,76 @@ class RateLimiter:
                 details={"error": str(e)}
             ))
     
-    def get_remaining(self, identifier: str) -> int:
-        """Get remaining requests for identifier (thread-safe)."""
+    def _get_endpoint_bucket(self, endpoint: str, identifier: str) -> TokenBucket:
+        """Get or create token bucket for endpoint and identifier (thread-safe)."""
+        with self._lock:
+            if endpoint not in self._endpoint_buckets:
+                self._endpoint_buckets[endpoint] = {}
+            
+            endpoint_buckets = self._endpoint_buckets[endpoint]
+            
+            if identifier not in endpoint_buckets:
+                endpoint_rpm = self._endpoint_limits[endpoint]
+                bucket = TokenBucket(
+                    capacity=endpoint_rpm,
+                    refill_rate=endpoint_rpm / 60.0
+                )
+                bucket.tokens = float(endpoint_rpm)
+                endpoint_buckets[identifier] = bucket
+            
+            return endpoint_buckets[identifier]
+    
+    def get_remaining(self, identifier: str, endpoint: Optional[str] = None) -> int:
+        """
+        Get remaining requests for identifier (thread-safe).
+        
+        Args:
+            identifier: User/IP identifier
+            endpoint: Optional endpoint name for per-endpoint rate limiting
+            
+        Returns:
+            Remaining requests (minimum of global and endpoint if specified)
+        """
         bucket = self._get_bucket(identifier)
-        return bucket.available()
+        remaining = bucket.available()
+        
+        # If endpoint specified, return minimum of global and endpoint limits
+        if endpoint and endpoint in self._endpoint_limits:
+            endpoint_bucket = self._get_endpoint_bucket(endpoint, identifier)
+            endpoint_remaining = endpoint_bucket.available()
+            remaining = min(remaining, endpoint_remaining)
+        
+        return remaining
+    
+    def get_rate_limit_headers(self, identifier: str, endpoint: Optional[str] = None) -> Dict[str, str]:
+        """
+        Get rate limit headers for HTTP responses.
+        
+        Args:
+            identifier: User/IP identifier
+            endpoint: Optional endpoint name for per-endpoint rate limiting
+            
+        Returns:
+            Dictionary of rate limit headers
+        """
+        bucket = self._get_bucket(identifier)
+        headers = {
+            "X-RateLimit-Limit": str(self._requests_per_minute),
+            "X-RateLimit-Remaining": str(bucket.available()),
+            "X-RateLimit-Reset": str(int(time.time()) + int((self._requests_per_minute - bucket.tokens) / bucket.refill_rate))
+        }
+        
+        # Add endpoint-specific headers if specified
+        if endpoint and endpoint in self._endpoint_limits:
+            endpoint_bucket = self._get_endpoint_bucket(endpoint, identifier)
+            endpoint_limit = self._endpoint_limits[endpoint]
+            headers.update({
+                f"X-RateLimit-Endpoint-{endpoint}-Limit": str(endpoint_limit),
+                f"X-RateLimit-Endpoint-{endpoint}-Remaining": str(endpoint_bucket.available()),
+                f"X-RateLimit-Endpoint-{endpoint}-Reset": str(int(time.time()) + int((endpoint_limit - endpoint_bucket.tokens) / endpoint_bucket.refill_rate))
+            })
+        
+        return headers
     
     def reset(self, identifier: Optional[str] = None) -> None:
         """Reset rate limit for identifier (or all if None) (thread-safe)."""
@@ -197,9 +292,16 @@ def get_rate_limiter() -> RateLimiter:
         try:
             config = get_config()
             rpm = config.max_requests_per_minute
+            # Define per-endpoint limits (can be configured via env vars in future)
+            endpoint_limits = {
+                "query": rpm,  # Same as global for now
+                "retrieval": rpm * 2,  # Allow more retrieval requests
+                "llm": rpm // 2,  # Stricter limit for LLM calls
+            }
         except Exception:
             rpm = 60  # Default: 60 requests per minute
-        _rate_limiter = RateLimiter(requests_per_minute=rpm)
+            endpoint_limits = {}
+        _rate_limiter = RateLimiter(requests_per_minute=rpm, endpoint_limits=endpoint_limits)
     return _rate_limiter
 
 

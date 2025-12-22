@@ -210,6 +210,42 @@ class AppConfig(BaseSettings):
         validation_alias=AliasChoices("MAX_REQUESTS_PER_MINUTE", "max_requests_per_minute")
     )
     
+    # Resource limits
+    max_memory_mb: int = Field(
+        default=2048,
+        ge=256,
+        validation_alias=AliasChoices("MAX_MEMORY_MB", "max_memory_mb"),
+        description="Maximum memory usage in MB"
+    )
+    llm_timeout_seconds: int = Field(
+        default=120,
+        ge=10,
+        le=600,
+        validation_alias=AliasChoices("LLM_TIMEOUT_SECONDS", "llm_timeout_seconds"),
+        description="LLM call timeout in seconds"
+    )
+    retrieval_timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        validation_alias=AliasChoices("RETRIEVAL_TIMEOUT_SECONDS", "retrieval_timeout_seconds"),
+        description="Retrieval operation timeout in seconds"
+    )
+    max_concurrent_requests: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        validation_alias=AliasChoices("MAX_CONCURRENT_REQUESTS", "max_concurrent_requests"),
+        description="Maximum concurrent requests"
+    )
+    max_request_body_size_mb: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        validation_alias=AliasChoices("MAX_REQUEST_BODY_SIZE_MB", "max_request_body_size_mb"),
+        description="Maximum request body size in MB"
+    )
+    
     # Caching
     enable_llm_cache: bool = Field(
         default=True,
