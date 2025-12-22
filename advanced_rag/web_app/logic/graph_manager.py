@@ -3,8 +3,9 @@ Graph manager for initializing and caching the LangGraph RAG workflow.
 """
 import os
 import logging
+import threading
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Optional
 
 import streamlit as st
 from langchain_openai import ChatOpenAI
@@ -62,10 +63,50 @@ def _register_services(persist_dir: str) -> None:
         logger.debug(f"Registered property registry from: {persist_dir}")
 
 
+# Cache RetrieverTool instances to reuse connections (connection pooling)
+_retriever_tool_cache: Dict[str, RetrieverTool] = {}
+_retriever_tool_lock = threading.Lock()
+
+
+def _get_retriever_tool(persist_dir: str, embedding_model: str) -> Optional[RetrieverTool]:
+    """
+    Get or create RetrieverTool instance with connection reuse (connection pooling).
+    
+    This function implements connection pooling by reusing RetrieverTool instances
+    for the same persist_dir and embedding_model combination, avoiding redundant
+    ChromaDB connections.
+    
+    Args:
+        persist_dir: Directory containing the vectorstore
+        embedding_model: Embedding model name
+    
+    Returns:
+        RetrieverTool instance or None if vectorstore not found
+    """
+    import threading
+    cache_key = f"{persist_dir}:{embedding_model}"
+    
+    with _retriever_tool_lock:
+        if cache_key not in _retriever_tool_cache:
+            rt = RetrieverTool(persist_directory=persist_dir, embedding_model=embedding_model)
+            if rt.load_vectorstore():
+                _retriever_tool_cache[cache_key] = rt
+                logger.debug(f"Created new RetrieverTool instance for: {cache_key}")
+            else:
+                logger.warning(f"Failed to load vectorstore for: {cache_key}")
+                return None
+        else:
+            logger.debug(f"Reusing RetrieverTool instance for: {cache_key}")
+        
+        return _retriever_tool_cache.get(cache_key)
+
+
 @st.cache_resource
 def _get_graph(persist_dir: str, embedding_model: str, cache_version: int = 2):
     """
     Build and cache the RAG graph.
+    
+    Uses connection pooling to reuse RetrieverTool instances and ChromaDB connections.
     
     Args:
         persist_dir: Directory containing the vectorstore
@@ -78,8 +119,9 @@ def _get_graph(persist_dir: str, embedding_model: str, cache_version: int = 2):
     # Register services in DI container
     _register_services(persist_dir)
     
-    rt = RetrieverTool(persist_directory=persist_dir, embedding_model=embedding_model)
-    if not rt.load_vectorstore():
+    # Use connection pooling to reuse RetrieverTool instances
+    rt = _get_retriever_tool(persist_dir, embedding_model)
+    if not rt:
         return None  # Return None instead of raising - let UI handle it
 
     retrieve_tool = rt.get_retriever_tool()

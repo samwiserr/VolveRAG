@@ -201,7 +201,10 @@ def get_embedding_cache() -> Cache:
 
 def generate_cache_key(*args: Any, **kwargs: Any) -> str:
     """
-    Generate cache key from function arguments.
+    Generate cache key from function arguments (optimized).
+    
+    Uses efficient hashing to avoid unnecessary JSON serialization overhead.
+    Optimized for common cases (strings, numbers, simple types).
     
     Args:
         *args: Positional arguments
@@ -210,13 +213,35 @@ def generate_cache_key(*args: Any, **kwargs: Any) -> str:
     Returns:
         MD5 hash of serialized arguments
     """
-    # Create deterministic representation
+    # Optimize for common cases: if all args/kwargs are simple types, use direct hashing
+    # Otherwise, fall back to JSON serialization
+    
+    # Fast path: all arguments are simple types (str, int, float, bool, None)
+    try:
+        simple_types = (str, int, float, bool, type(None))
+        all_simple = all(isinstance(arg, simple_types) for arg in args) and \
+                    all(isinstance(v, simple_types) for v in kwargs.values())
+        
+        if all_simple:
+            # Direct hashing without JSON serialization
+            parts = []
+            for arg in args:
+                parts.append(str(arg))
+            for key, value in sorted(kwargs.items()):
+                parts.append(f"{key}:{value}")
+            key_str = "|".join(parts)
+            return hashlib.md5(key_str.encode('utf-8')).hexdigest()
+    except Exception:
+        # Fall through to JSON serialization if optimization fails
+        pass
+    
+    # Fallback: use JSON serialization for complex types
     key_data = {
         "args": args,
         "kwargs": sorted(kwargs.items()) if kwargs else {}
     }
-    key_str = json.dumps(key_data, sort_keys=True, default=str)
-    return hashlib.md5(key_str.encode()).hexdigest()
+    key_str = json.dumps(key_data, sort_keys=True, default=str, ensure_ascii=False)
+    return hashlib.md5(key_str.encode('utf-8')).hexdigest()
 
 
 def cached(
