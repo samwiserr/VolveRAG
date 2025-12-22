@@ -100,7 +100,8 @@ class AdvancedDocumentProcessor:
                     nltk.download('punkt_tab', quiet=True)
                     try:
                         nltk.download('punkt', quiet=True)
-                    except:
+                    except (LookupError, Exception) as e:
+                        logger.debug(f"NLTK punkt download failed (may not be needed): {e}")
                         pass  # punkt may not be needed if punkt_tab works
         except Exception as e:
             self.logger.warning(f"NLTK initialization issue: {e}")
@@ -564,7 +565,8 @@ class AdvancedDocumentProcessor:
                 footer_text = self._extract_section_text(section.footer)
                 if footer_text:
                     text_parts.append(f"[FOOTER]\n{footer_text}\n[/FOOTER]")
-        except:
+        except Exception as e:
+            self.logger.debug(f"Document processing fallback failed: {e}")
             pass  # Headers/footers might not be accessible
 
         full_text = "\n".join(text_parts)

@@ -30,10 +30,12 @@ from .security import RateLimiter, TokenBucket, get_rate_limiter, rate_limit, sa
 try:
     from .logging import setup_logging
     setup_logging()
-except Exception:
+except (ImportError, AttributeError, ValueError, TypeError) as e:
     # If logging setup fails, continue with default logging
     # This ensures the app doesn't crash on import
-    pass
+    # Log to stderr if possible, otherwise silently continue
+    import sys
+    print(f"Warning: Logging setup failed: {e}", file=sys.stderr)
 
 __all__ = [
     "Result",

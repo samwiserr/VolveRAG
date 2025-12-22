@@ -981,8 +981,9 @@ class RetrieverTool:
                                     }
                                 )
                                 well_picks_docs = well_picks_retriever.invoke("formation picks well")
-                            except:
+                            except (ValueError, TypeError, AttributeError, Exception) as e:
                                 # Last resort: no filter, just high k
+                                logger.debug(f"[RETRIEVE] Filter method failed, using fallback: {e}")
                                 well_picks_retriever = self.vectorstore.as_retriever(
                                     search_type="similarity",
                                     search_kwargs={"k": k_well_picks}
@@ -1012,8 +1013,9 @@ class RetrieverTool:
                                 }
                             )
                             well_picks_docs = well_picks_retriever.invoke(query)
-                        except:
+                        except (ValueError, TypeError, AttributeError, Exception) as e:
                             # Method 2: Try boolean filter
+                            logger.debug(f"[RETRIEVE] ChromaDB filter syntax failed, trying boolean filter: {e}")
                             try:
                                 well_picks_retriever = self.vectorstore.as_retriever(
                                     search_type="similarity",
@@ -1023,8 +1025,9 @@ class RetrieverTool:
                                     }
                                 )
                                 well_picks_docs = well_picks_retriever.invoke(query)
-                            except:
+                            except (ValueError, TypeError, AttributeError, Exception) as e2:
                                 # Method 3: Get all well picks chunks by searching with high k
+                                logger.debug(f"[RETRIEVE] Boolean filter also failed, using high-k fallback: {e2}")
                                 well_picks_query = "formation picks well" if needs_multiple else query
                                 general_retriever = self.vectorstore.as_retriever(
                                     search_type="similarity",
@@ -1401,8 +1404,9 @@ class RetrieverTool:
                                     }
                                 )
                                 well_picks_docs = well_picks_retriever.invoke("formation picks well")
-                            except:
+                            except (ValueError, TypeError, AttributeError, Exception) as e:
                                 # Last resort: no filter, just high k
+                                logger.debug(f"[RETRIEVE] Filter method failed, using fallback: {e}")
                                 well_picks_retriever = self.vectorstore.as_retriever(
                                     search_type="similarity",
                                     search_kwargs={"k": k_well_picks}
@@ -1435,8 +1439,9 @@ class RetrieverTool:
                                 }
                             )
                             well_picks_docs = well_picks_retriever.invoke(query)
-                        except:
+                        except (ValueError, TypeError, AttributeError, Exception) as e:
                             # Method 2: Try boolean filter
+                            logger.debug(f"[RETRIEVE] ChromaDB filter syntax failed, trying boolean filter: {e}")
                             try:
                                 well_picks_retriever = self.vectorstore.as_retriever(
                                     search_type="similarity",
@@ -1446,8 +1451,9 @@ class RetrieverTool:
                                     }
                                 )
                                 well_picks_docs = well_picks_retriever.invoke(query)
-                            except:
+                            except (ValueError, TypeError, AttributeError, Exception) as e2:
                                 # Method 3: Get all well picks chunks by searching with high k
+                                logger.debug(f"[RETRIEVE] Boolean filter also failed, using high-k fallback: {e2}")
                                 well_picks_query = "formation picks well" if needs_multiple else query
                                 general_retriever = self.vectorstore.as_retriever(
                                     search_type="similarity",

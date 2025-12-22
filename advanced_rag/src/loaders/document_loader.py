@@ -121,7 +121,8 @@ class DocumentLoader:
             # Try PyMuPDF first (better), then PyPDF
             try:
                 loader = PyMuPDFLoader(str(file_path))
-            except:
+            except (ImportError, FileNotFoundError, AttributeError, Exception) as e:
+                logger.debug(f"PyMuPDFLoader failed, using PyPDFLoader: {e}")
                 loader = PyPDFLoader(str(file_path))
             docs = loader.load()
             return docs or []
@@ -130,7 +131,8 @@ class DocumentLoader:
             # Try UnstructuredWordDocumentLoader first, then Docx2txtLoader
             try:
                 loader = UnstructuredWordDocumentLoader(str(file_path))
-            except:
+            except (ImportError, FileNotFoundError, AttributeError, Exception) as e:
+                logger.debug(f"UnstructuredWordDocumentLoader failed, using Docx2txtLoader: {e}")
                 loader = Docx2txtLoader(str(file_path))
             docs = loader.load()
             return docs or []

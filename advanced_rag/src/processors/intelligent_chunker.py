@@ -61,7 +61,8 @@ class IntelligentChunker:
                     nltk.download('punkt_tab', quiet=True)
                     try:
                         nltk.download('punkt', quiet=True)
-                    except:
+                    except (LookupError, Exception) as e:
+                        logger.debug(f"NLTK punkt download failed (may not be needed): {e}")
                         pass  # punkt may not be needed if punkt_tab works
         except Exception as e:
             pass  # NLTK will be handled by sent_tokenize if available
