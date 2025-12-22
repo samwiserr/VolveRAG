@@ -1,0 +1,17 @@
+# Minimal requirements for running unit tests
+# These are the core dependencies needed for unit tests only
+
+# Core utilities (required for tests)
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# Testing framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+hypothesis>=6.92.0
+
+# Basic utilities used in core modules
+numpy>=1.24.0
+
